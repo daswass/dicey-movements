@@ -58,7 +58,7 @@ function App() {
       </main>
 
       <footer className="text-center p-4 text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-        © {new Date().getFullYear()} Dicey Movements | POWER {getDayOfWeek()}!
+        © {new Date().getFullYear()} Wassercise | POWER {getDayOfWeek()}!
       </footer>
     </div>
   );
