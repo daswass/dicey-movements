@@ -37,6 +37,7 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
   const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
   const [currentWorkoutComplete, setCurrentWorkoutComplete] = useState<boolean>(false);
   const [timerResetKey, setTimerResetKey] = useState<number>(0);
+  const [showHighFiveModal, setShowHighFiveModal] = useState<boolean>(false);
 
   useEffect(() => {
     saveToLocalStorage("multipliers", multipliers);
@@ -96,6 +97,11 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
   const completeCurrentWorkout = () => {
     setCurrentWorkoutComplete(true);
     setTimerComplete(false);
+    setShowHighFiveModal(true);
+
+    setTimeout(() => {
+      setShowHighFiveModal(false);
+    }, 2000);
 
     if (latestSession) {
       setMultipliers((prev) => ({
@@ -130,29 +136,28 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="col-span-1 lg:col-span-2 space-y-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-            <Settings size={20} className="text-gray-500 dark:text-gray-400" />
-          </button>
-
-          <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
-          <Timer
-            key={timerResetKey}
-            duration={settings.timerDuration}
-            onComplete={handleTimerComplete}
-            resetSignal={currentWorkoutComplete}
-          />
-        </div>
-
-        {timerComplete && !currentWorkoutComplete && (
+        {timerComplete && !currentWorkoutComplete ? (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Roll the Dice</h2>
             <DiceRoller
               onRollComplete={handleWorkoutComplete}
               multipliers={multipliers}
               rollCompleted={!!latestSession}
+            />
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <Settings size={20} className="text-gray-500 dark:text-gray-400" />
+            </button>
+            <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
+            <Timer
+              key={timerResetKey}
+              duration={settings.timerDuration}
+              onComplete={handleTimerComplete}
+              resetSignal={currentWorkoutComplete}
             />
           </div>
         )}
@@ -243,6 +248,17 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
               updateSettings={updateSettings}
               onClose={() => setShowSettings(false)}
             />
+          </div>
+        </div>
+      )}
+
+      {showHighFiveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
+            <span className="text-6xl mb-4 block" role="img" aria-label="High Five">
+              🙌
+            </span>
+            <p className="text-2xl font-semibold">That's Like You!</p>
           </div>
         </div>
       )}
