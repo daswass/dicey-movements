@@ -38,6 +38,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
   const [currentWorkoutComplete, setCurrentWorkoutComplete] = useState<boolean>(false);
   const [timerResetKey, setTimerResetKey] = useState<number>(0);
   const [showHighFiveModal, setShowHighFiveModal] = useState<boolean>(false);
+  const [showConfirmModal, setShowConfirmModal] = useState<{
+    show: boolean;
+    type: "game" | "multipliers" | null;
+  }>({ show: false, type: null });
 
   useEffect(() => {
     saveToLocalStorage("multipliers", multipliers);
@@ -137,6 +141,23 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
     return repsByExercise;
   };
 
+  const handleResetClick = (type: "game" | "multipliers") => {
+    setShowConfirmModal({ show: true, type });
+  };
+
+  const handleConfirmReset = () => {
+    if (showConfirmModal.type === "game") {
+      resetAll();
+    } else if (showConfirmModal.type === "multipliers") {
+      resetMultipliers();
+    }
+    setShowConfirmModal({ show: false, type: null });
+  };
+
+  const handleCancelReset = () => {
+    setShowConfirmModal({ show: false, type: null });
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="col-span-1 lg:col-span-2 space-y-6">
@@ -187,12 +208,12 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
             <h3 className="text-xl font-semibold">Stats</h3>
             <div className="flex space-x-2">
               <button
-                onClick={resetAll}
+                onClick={() => handleResetClick("game")}
                 className="px-3 py-1.5 text-sm hover:bg-red-600 text-white rounded-lg transition-colors">
                 Reset Game
               </button>
               <button
-                onClick={resetMultipliers}
+                onClick={() => handleResetClick("multipliers")}
                 className="px-3 py-1.5 text-sm hover:bg-red-600 text-white rounded-lg transition-colors">
                 Reset Multipliers
               </button>
@@ -267,6 +288,33 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
               🙌
             </span>
             <p className="text-2xl font-semibold">That's Like You!</p>
+          </div>
+        </div>
+      )}
+
+      {showConfirmModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
+            <h3 className="text-xl font-semibold mb-4">
+              {showConfirmModal.type === "game" ? "Reset Game?" : "Reset Multipliers?"}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              {showConfirmModal.type === "game"
+                ? "This will reset all game progress, including multipliers and history."
+                : "This will reset all exercise multipliers to 1x."}
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={handleCancelReset}
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmReset}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
