@@ -112,6 +112,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
     setLatestSession(null);
   };
 
+  const getTotalSetsToday = () => {
+    return history.length;
+  };
+
   // Calculate total reps for today
   const getTotalRepsToday = () => {
     const today = new Date().setHours(0, 0, 0, 0);
@@ -195,6 +199,10 @@ const Dashboard: React.FC<DashboardProps> = ({ settings, updateSettings }) => {
             </div>
           </div>
           <div className="flex justify-between items-center mb-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <h4 className="text-md font-medium">Total Sets Today:</h4>
+            <span className="text-2xl font-bold text-green-600 dark:text-green-400">
+              {getTotalSetsToday()}
+            </span>
             <h4 className="text-md font-medium">Total Reps Today:</h4>
             <span className="text-2xl font-bold text-green-600 dark:text-green-400">
               {getTotalRepsToday()}
