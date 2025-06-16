@@ -1,0 +1,1 @@
+alter table profiles add column last_session_start timestamptz; 

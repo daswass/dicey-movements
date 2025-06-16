@@ -1,0 +1,1 @@
+alter table profiles add column notifications_enabled boolean default true; 

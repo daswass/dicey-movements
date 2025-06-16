@@ -1,16 +1,17 @@
-import React from 'react';
-import { CheckCircle, Clock } from 'lucide-react';
-import { WorkoutSession } from '../types';
+import React from "react";
+import { CheckCircle, Clock } from "lucide-react";
+import { WorkoutSession } from "../types";
 
 interface ExerciseDisplayProps {
   session: WorkoutSession;
+  onComplete: () => Promise<void>;
 }
 
-const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session }) => {
+const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session, onComplete }) => {
   const { exercise, reps, multiplier, diceRoll, timestamp } = session;
-  const formattedTime = new Date(timestamp).toLocaleTimeString([], { 
-    hour: '2-digit', 
-    minute: '2-digit' 
+  const formattedTime = new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
   return (
@@ -20,27 +21,28 @@ const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session }) => {
           <span className="text-5xl mr-2">{exercise.emoji}</span>
           <h3 className="text-2xl font-bold">{exercise.name}</h3>
         </div>
-        
+
         <div className="flex flex-col space-y-2">
           <div className="flex items-center justify-center md:justify-start text-gray-700 dark:text-gray-300">
             <CheckCircle size={16} className="mr-2 text-green-500" />
             <span>
-              <strong>{reps} reps</strong> 
+              <strong>{reps} reps</strong>
               {multiplier > 1 && (
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {' '}({diceRoll.repsDie} × {multiplier})
+                  {" "}
+                  ({diceRoll.repsDie} × {multiplier})
                 </span>
               )}
             </span>
           </div>
-          
+
           <div className="flex items-center justify-center md:justify-start text-gray-700 dark:text-gray-300">
             <Clock size={16} className="mr-2 text-blue-500" />
             <span>{formattedTime}</span>
           </div>
         </div>
       </div>
-      
+
       <div className="mt-4 md:mt-0">
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-xl animate-pulse" />
