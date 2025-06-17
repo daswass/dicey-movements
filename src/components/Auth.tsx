@@ -84,150 +84,168 @@ const Auth: React.FC = () => {
 
   if (user) {
     return (
-      <div className="max-w-md mx-auto p-6 bg-gray-800 rounded-lg shadow-md mb-6">
-        <div className="mb-4 text-center">
-          <div className="text-lg mb-2 text-white">Welcome back!</div>
-          <div className="text-gray-300">{user.email}</div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
+        <div className="max-w-md w-full p-8 bg-gray-800 rounded-xl shadow-lg">
+          <div className="mb-6 text-center">
+            <h2 className="text-2xl font-bold text-white mb-2">Welcome back!</h2>
+            <p className="text-gray-300">{user.email}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200 font-medium"
+            disabled={loading}>
+            {loading ? "Logging out..." : "Logout"}
+          </button>
         </div>
-        <button
-          onClick={handleLogout}
-          className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-          disabled={loading}>
-          {loading ? "Logging out..." : "Logout"}
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto p-6 bg-gray-800 rounded-lg shadow-md mb-6">
-      <div className="flex mb-6 rounded-lg overflow-hidden">
-        <button
-          className={`flex-1 px-4 py-2 text-center transition-colors ${
-            view === "login"
-              ? "bg-blue-500 text-white"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
-          onClick={() => {
-            setView("login");
-            setError(null);
-            setMessage(null);
-          }}>
-          Login
-        </button>
-        <button
-          className={`flex-1 px-4 py-2 text-center transition-colors ${
-            view === "signup"
-              ? "bg-blue-500 text-white"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
-          onClick={() => {
-            setView("signup");
-            setError(null);
-            setMessage(null);
-          }}>
-          Sign Up
-        </button>
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
+      <div className="max-w-md w-full p-8 bg-gray-800 rounded-xl shadow-lg">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">
+            <span className="text-blue-500">Dicey</span>
+            <span className="text-red-500">Movements</span>
+          </h1>
+          <p className="text-gray-400">Micro-workouts made magical!</p>
+        </div>
+
+        <div className="flex mb-8 rounded-lg overflow-hidden bg-gray-700/50">
+          <button
+            className={`flex-1 px-4 py-3 text-center transition-colors duration-200 ${
+              view === "login" ? "bg-blue-500 text-white" : "text-gray-300 hover:bg-gray-600"
+            }`}
+            onClick={() => {
+              setView("login");
+              setError(null);
+              setMessage(null);
+            }}>
+            Login
+          </button>
+          <button
+            className={`flex-1 px-4 py-3 text-center transition-colors duration-200 ${
+              view === "signup" ? "bg-blue-500 text-white" : "text-gray-300 hover:bg-gray-600"
+            }`}
+            onClick={() => {
+              setView("signup");
+              setError(null);
+              setMessage(null);
+            }}>
+            Sign Up
+          </button>
+        </div>
+
+        <form onSubmit={view === "login" ? handleLogin : handleSignUp} className="space-y-4">
+          {view === "signup" && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label
+                    htmlFor="firstName"
+                    className="block text-sm font-medium text-gray-300 mb-1">
+                    First Name
+                  </label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors duration-200"
+                    required
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="lastName"
+                    className="block text-sm font-medium text-gray-300 mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    placeholder="Doe"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors duration-200"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="location" className="block text-sm font-medium text-gray-300 mb-1">
+                  Home City
+                </label>
+                <input
+                  id="location"
+                  type="text"
+                  placeholder="New York"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors duration-200"
+                  required
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors duration-200"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-colors duration-200"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-900/30 border border-red-500/30 text-red-300 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          {message && (
+            <div className="p-3 bg-green-900/30 border border-green-500/30 text-green-300 rounded-lg text-sm">
+              {message}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading}>
+            {loading
+              ? view === "login"
+                ? "Logging in..."
+                : "Signing up..."
+              : view === "login"
+              ? "Login"
+              : "Sign Up"}
+          </button>
+        </form>
       </div>
-
-      <form onSubmit={view === "login" ? handleLogin : handleSignUp} className="space-y-4">
-        {view === "signup" && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="firstName" className="block text-sm font-medium text-gray-300 mb-1">
-                  First Name
-                </label>
-                <input
-                  id="firstName"
-                  type="text"
-                  placeholder="John"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-700 text-white"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="lastName" className="block text-sm font-medium text-gray-300 mb-1">
-                  Last Name
-                </label>
-                <input
-                  id="lastName"
-                  type="text"
-                  placeholder="Doe"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-700 text-white"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="location" className="block text-sm font-medium text-gray-300 mb-1">
-                Home City
-              </label>
-              <input
-                id="location"
-                type="text"
-                placeholder="New York"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-700 text-white"
-                required
-              />
-            </div>
-          </>
-        )}
-
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-700 text-white"
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-700 text-white"
-            required
-          />
-        </div>
-
-        {error && <div className="p-3 bg-red-900/30 text-red-300 rounded-lg text-sm">{error}</div>}
-
-        {message && (
-          <div className="p-3 bg-green-900/30 text-green-300 rounded-lg text-sm">{message}</div>
-        )}
-
-        <button
-          type="submit"
-          className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-          disabled={loading}>
-          {loading
-            ? view === "login"
-              ? "Logging in..."
-              : "Signing up..."
-            : view === "login"
-            ? "Login"
-            : "Sign Up"}
-        </button>
-      </form>
     </div>
   );
 };

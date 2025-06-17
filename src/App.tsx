@@ -115,11 +115,10 @@ function App() {
         <nav className="bg-gray-800 shadow-lg">
           <div className="max-w-7xl mx-auto px-4">
             <div className="flex justify-between h-16">
-              <div className="flex items-center">
-                <Link to="/" className="flex items-center space-x-2">
-                  <span className="text-xl font-bold">Dicey Movements</span>
-                </Link>
-              </div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <span className="text-blue-600 dark:text-blue-400">Dicey</span>
+                <span className="text-red-500 dark:text-red-400">Movements</span>
+              </h1>
               {/* Name and sign out all the way to the right */}
               <div className="flex items-center space-x-8 ml-auto">
                 <div className="flex items-center space-x-8">
