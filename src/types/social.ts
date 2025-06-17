@@ -1,8 +1,8 @@
 export interface UserProfile {
   id: string;
-  username: string;
   first_name: string;
   last_name: string;
+  username: string;
   location: {
     city: string;
     country: string;
@@ -18,6 +18,8 @@ export interface UserProfile {
     achievements: Achievement[];
   };
   friends: string[]; // Array of friend user IDs
+  timer_duration: number;
+  notifications_enabled: boolean;
 }
 
 export interface LeaderboardEntry {

@@ -73,7 +73,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHighFiveModal, setShowHighFiveModal] = useState(false);
-  const [timerResetKey, setTimerResetKey] = useState(0);
   const [showConfirmModal, setShowConfirmModal] = useState<{
     show: boolean;
     type: "game" | "multipliers" | null;
@@ -84,7 +83,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const timerWorkerRef = useRef<Worker | null>(null);
   const [currentExercise, setCurrentExercise] = useState<any | null>(null);
   const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
-  const [timerDuration, setTimerDuration] = useState<number>(60); // default 60 seconds
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
 
   useEffect(() => {
@@ -143,6 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           setTimeLeft(0);
           setIsTimerRunning(false);
           setTimerComplete(true);
+
           // Show notification if browser supports it
           if ("Notification" in window && Notification.permission === "granted") {
             new Notification("Workout Timer", {
@@ -180,11 +179,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   useEffect(() => {
     if (user) fetchHistory();
-  }, [user, currentWorkoutComplete]);
+  }, [user]);
 
   const handleTimerComplete = () => {
     setTimerComplete(true);
     setCurrentWorkoutComplete(false);
+
     if (notificationsEnabled && "Notification" in window && Notification.permission === "granted") {
       new Notification("Workout Timer", {
         body: "Your rest period is complete!",
@@ -194,9 +194,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleWorkoutComplete = async () => {
+    setShowHighFiveModal(true);
+
+    setTimeout(() => {
+      setShowHighFiveModal(false);
+    }, 2000);
+
     if (!latestSession) return;
     console.log("Inserting activity:", latestSession);
-    const { error } = await supabase.from("activities").insert({
+
+    // Create the new activity object
+    const newActivity = {
+      id: crypto.randomUUID(), // Generate a temporary ID
       user_id: user.id,
       timestamp: new Date().toISOString(),
       exercise_id: latestSession.exercise.id,
@@ -204,20 +213,30 @@ const Dashboard: React.FC<DashboardProps> = ({
       reps: latestSession.reps,
       multiplier: latestSession.multiplier,
       dice_roll: latestSession.diceRoll,
-    });
+    };
+
+    // Update local history immediately
+    setHistory((prevHistory) => [newActivity, ...prevHistory]);
+
+    // Insert into database
+    const { error } = await supabase.from("activities").insert(newActivity);
     if (error) {
       console.error("Error inserting activity:", error);
-    } else {
-      console.log("Activity inserted successfully");
+      // Revert local history if database insert fails
+      setHistory((prevHistory) => prevHistory.slice(1));
     }
+
     // Increment multiplier for the completed exercise
     setMultipliers((prev) => ({
       ...prev,
       [latestSession.exercise.id]: (prev[latestSession.exercise.id] || 1) + 1,
     }));
+
     setCurrentWorkoutComplete(true);
+
     setTimerComplete(false);
     onStartTimer();
+
     setLatestSession(null);
   };
 
@@ -230,10 +249,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       5: 1,
       6: 1,
     });
-  };
-
-  const resetWorkoutHistory = () => {
-    setHistory([]);
   };
 
   const fetchLastSessionStart = async () => {
@@ -258,7 +273,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setLatestSession(null);
     setCurrentWorkoutComplete(false);
     setTimerComplete(false);
-    setTimerResetKey((prevKey) => prevKey + 1);
+
     // Update last_session_start in DB
     const { error } = await supabase
       .from("profiles")
@@ -268,60 +283,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       await fetchLastSessionStart();
       await fetchHistory();
     }
-  };
-
-  const completeCurrentWorkout = async () => {
-    setCurrentWorkoutComplete(true);
-    setTimerComplete(false);
-    setShowHighFiveModal(true);
-
-    setTimeout(() => {
-      setShowHighFiveModal(false);
-    }, 2000);
-
-    if (latestSession) {
-      // Update multipliers
-      setMultipliers((prev) => ({
-        ...prev,
-        [latestSession.exercise.id]: (prev[latestSession.exercise.id] || 0) + 1,
-      }));
-
-      // Create activity in friend_activities table
-      if (user && userProfile) {
-        const { error } = await supabase.from("friend_activities").insert({
-          user_id: user.id,
-          username: userProfile.username || `${userProfile.first_name} ${userProfile.last_name}`,
-          activity_type: "exercise",
-          details: `Completed ${latestSession.reps} reps of ${latestSession.exercise.name}`,
-          timestamp: new Date().toISOString(),
-        });
-
-        if (error) {
-          console.error("Error creating activity:", error);
-        }
-      }
-
-      // Update user's stats
-      if (userProfile) {
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            stats: {
-              totalReps: (userProfile.stats.totalReps || 0) + latestSession.reps,
-              totalSets: (userProfile.stats.totalSets || 0) + 1,
-              streak: userProfile.stats.streak || 0,
-              achievements: userProfile.stats.achievements || [],
-            },
-          })
-          .eq("id", user.id);
-
-        if (error) {
-          console.error("Error updating stats:", error);
-        }
-      }
-    }
-
-    setLatestSession(null);
   };
 
   const getTotalSetsToday = () => {
@@ -385,9 +346,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       .eq("id", user.id)
       .single();
     if (!error && data) {
-      if (data.timer_duration) {
-        setTimerDuration(data.timer_duration);
-        setTimeLeft(data.timer_duration);
+      if (userProfile && data.timer_duration) {
+        userProfile.timer_duration = data.timer_duration;
       }
       if (typeof data.notifications_enabled === "boolean")
         setNotificationsEnabled(data.notifications_enabled);
@@ -407,11 +367,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // On settings change, update timer_duration in DB
   const updateTimerDuration = async (newDuration: number) => {
-    setTimerDuration(newDuration);
-    setTimeLeft(newDuration);
     setIsTimerActive(false);
+    setTimeLeft(newDuration);
     if (user) {
       await supabase.from("profiles").update({ timer_duration: newDuration }).eq("id", user.id);
+      // Update local state immediately
+      setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
     }
   };
 
@@ -432,7 +393,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 rollCompleted={!!latestSession}
               />
             </div>
-          ) : !latestSession ? (
+          ) : !latestSession && userProfile ? (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -441,10 +402,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               </button>
               <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
               <Timer
-                key={timerResetKey}
-                duration={timerDuration}
+                duration={userProfile?.timer_duration}
                 onComplete={handleTimerComplete}
-                resetSignal={currentWorkoutComplete}
                 isActive={isTimerActive}
                 setIsActive={setIsTimerActive}
                 timeLeft={timeLeft}
@@ -459,7 +418,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <h2 className="text-xl font-semibold">Current Workout</h2>
                 <button
                   onClick={() => {
-                    console.log("Button clicked");
                     handleWorkoutComplete();
                   }}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors">
@@ -530,12 +488,12 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {showSettings && (
+      {showSettings && userProfile && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full">
             <h2 className="text-2xl font-bold mb-4">Settings</h2>
             <SettingsPanel
-              timerDuration={timerDuration}
+              timerDuration={userProfile?.timer_duration}
               updateTimerDuration={updateTimerDuration}
               notificationsEnabled={notificationsEnabled}
               updateNotificationsEnabled={updateNotificationsEnabled}
@@ -549,7 +507,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center">
             <h2 className="text-4xl mb-4">🙌</h2>
-            <p className="text-xl">Great job!</p>
+            <p className="text-xl">That's like you!</p>
           </div>
         </div>
       )}

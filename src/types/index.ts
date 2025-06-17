@@ -23,7 +23,6 @@ export type ExerciseMultipliers = {
 };
 
 export type AppSettings = {
-  timerDuration: number; // in seconds
   notificationsEnabled: boolean;
   darkMode: boolean;
 };

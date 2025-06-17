@@ -1,19 +1,6 @@
 import React, { useState } from "react";
 import { supabase } from "../utils/supabaseClient";
 
-interface Profile {
-  id: string;
-  first_name: string;
-  last_name: string;
-  username: string;
-  location: string;
-  stats: {
-    games_played: number;
-    high_score: number;
-    total_score: number;
-  };
-}
-
 export const Auth: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -4,12 +4,18 @@ let timeLeft: number = 0;
 self.onmessage = (e: MessageEvent) => {
   const { type, duration } = e.data;
 
+  console.log("Timer worker - Received message:", type, duration);
+
   switch (type) {
     case "START":
-      timeLeft = duration;
+      if (timeLeft === 0) {
+        timeLeft = duration;
+      }
+
       if (timerInterval) {
         clearInterval(timerInterval);
       }
+
       timerInterval = setInterval(() => {
         timeLeft -= 1;
         self.postMessage({ type: "TICK", timeLeft });
@@ -19,6 +25,7 @@ self.onmessage = (e: MessageEvent) => {
           self.postMessage({ type: "COMPLETE" });
         }
       }, 1000);
+
       break;
 
     case "STOP":

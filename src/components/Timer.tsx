@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, RotateCcw } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface TimerProps {
   duration: number;
   onComplete: () => void;
-  resetSignal: boolean;
   isActive: boolean;
   setIsActive: (active: boolean) => void;
   timeLeft: number;
@@ -14,13 +12,19 @@ interface TimerProps {
 const Timer: React.FC<TimerProps> = ({
   duration,
   onComplete,
-  resetSignal,
   isActive,
   setIsActive,
   timeLeft,
   setTimeLeft,
 }) => {
   const timerWorkerRef = useRef<Worker | null>(null);
+  const [progressPercentage, setProgressPercentage] = useState((timeLeft / duration) * 100);
+
+  // Update progress when duration or timeLeft changes
+  useEffect(() => {
+    const progress = (timeLeft / duration) * 100;
+    setProgressPercentage(progress);
+  }, [timeLeft, duration]);
 
   useEffect(() => {
     // Initialize timer worker
@@ -47,17 +51,10 @@ const Timer: React.FC<TimerProps> = ({
   }, [onComplete, setTimeLeft]);
 
   useEffect(() => {
-    if (resetSignal) {
-      setTimeLeft(duration);
-      timerWorkerRef.current?.postMessage({ type: "STOP" });
-    }
-  }, [resetSignal, duration, setTimeLeft]);
-
-  useEffect(() => {
     if (isActive && timeLeft > 0) {
       timerWorkerRef.current?.postMessage({ type: "START", duration: timeLeft });
     } else {
-      timerWorkerRef.current?.postMessage({ type: "STOP" });
+      timerWorkerRef.current?.postMessage({ type: "STOP", duration: timeLeft });
     }
   }, [isActive, timeLeft]);
 
@@ -67,16 +64,21 @@ const Timer: React.FC<TimerProps> = ({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const progressPercentage = (timeLeft / duration) * 100;
-
   const getColorClass = () => {
     if (progressPercentage > 66) return "text-green-500 dark:text-green-400";
     if (progressPercentage > 33) return "text-yellow-500 dark:text-yellow-400";
     return "text-red-500 dark:text-red-400";
   };
 
-  const handleStart = () => setIsActive(true);
-  const handlePause = () => setIsActive(false);
+  const handleStart = () => {
+    console.log("Timer component - Start button clicked, continuing from:", timeLeft);
+    setIsActive(true);
+  };
+
+  const handlePause = () => {
+    console.log("Timer component - Pause button clicked, pausing at:", timeLeft);
+    setIsActive(false);
+  };
 
   return (
     <div className="flex flex-col items-center">
