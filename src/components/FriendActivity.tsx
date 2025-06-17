@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { supabase } from "../utils/supabaseClient";
+import React, { useEffect, useState } from "react";
 import { getExerciseById } from "../data/exercises";
+import { supabase } from "../utils/supabaseClient";
 
 interface Activity {
   id: string;
@@ -92,42 +92,54 @@ export const FriendActivity: React.FC = () => {
   }, [showOwnActivity, timeRange]);
 
   return (
-    <div className="max-w-4xl mx-auto p-2 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Friend Activity</h2>
-        <div className="flex space-x-4">
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={showOwnActivity}
-              onChange={(e) => setShowOwnActivity(e.target.checked)}
-              className="form-checkbox h-5 w-5 text-blue-500"
-            />
-            <span>Self</span>
-          </label>
+    <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold mb-2">Friend Activity</h2>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            {/* Self Activity Slider */}
+            <label
+              htmlFor="showOwnActivityToggle"
+              className="flex items-center space-x-2 cursor-pointer">
+              <span className="text-gray-700 dark:text-gray-300 text-sm font-medium">Self:</span>
+              <div className="relative inline-block w-10 h-5 rounded-full bg-gray-300 dark:bg-gray-600 transition duration-200 ease-in">
+                <input
+                  type="checkbox"
+                  id="showOwnActivityToggle"
+                  className="peer sr-only" // sr-only keeps it visually hidden
+                  checked={showOwnActivity}
+                  onChange={(e) => setShowOwnActivity(e.target.checked)}
+                />
+                <span className="absolute inset-0 rounded-full shadow-inner peer-focus:ring-2 peer-focus:ring-blue-500 transition-all duration-200 ease-in-out peer-checked:bg-blue-500 before:content-[''] before:absolute before:top-0.5 before:left-0.5 before:bg-white before:border before:rounded-full before:w-4 before:h-4 before:transition-all peer-checked:before:translate-x-full peer-checked:before:border-white"></span>
+              </div>
+              <span className="text-gray-700 dark:text-gray-300 text-sm font-medium">
+                {showOwnActivity ? "On" : "Off"}
+              </span>
+            </label>
+          </div>
 
-          {/* Time Range Segmented Control */}
-          <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden">
-            {[
-              { label: "24h", value: "day" },
-              { label: "Week", value: "week" },
-              { label: "Month", value: "month" },
-              { label: "All", value: "all" },
-            ].map((range, idx, arr) => (
-              <button
-                key={range.value}
-                onClick={() => setTimeRange(range.value as any)}
-                className={`px-3 py-2 text-sm font-medium focus:outline-none transition-all duration-150
-                  ${
-                    timeRange === range.value
-                      ? "bg-blue-500 text-white"
-                      : "bg-transparent text-gray-700 dark:text-gray-200"
-                  }
-                  ${idx === 0 ? "rounded-l-lg" : idx === arr.length - 1 ? "rounded-r-lg" : ""}
-                `}>
-                {range.label}
-              </button>
-            ))}
+          <div className="rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
+            <div className="grid grid-cols-4">
+              {" "}
+              {[
+                { label: "24h", value: "day" },
+                { label: "Week", value: "week" },
+                { label: "Month", value: "month" },
+                { label: "All", value: "all" },
+              ].map((range) => (
+                <button
+                  key={range.value}
+                  onClick={() => setTimeRange(range.value as any)}
+                  className={`px-2 py-1 text-xs font-semibold focus:outline-none transition-colors duration-150
+                    ${
+                      timeRange === range.value
+                        ? "bg-blue-500 text-white"
+                        : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                    }`}>
+                  {range.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -153,8 +165,9 @@ export const FriendActivity: React.FC = () => {
                   <div>
                     <div className="font-medium">{activity.username}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {getExerciseById(activity.exercise_id).emoji} - {activity.exercise_name} -{" "}
-                      {activity.reps} reps x {activity.multiplier}
+                      {getExerciseById(activity.exercise_id).emoji} {activity.reps}{" "}
+                      {activity.exercise_name}
+                      {activity.reps > 1 ? "s" : ""}
                     </div>
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">

@@ -1,4 +1,3 @@
-import { Session } from "@supabase/supabase-js";
 import React, { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
 
@@ -31,7 +30,6 @@ export const Leaderboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>("totalReps");
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("week");
-  const [session] = useState<Session | null>(null);
 
   const fetchLeaderboard = async () => {
     try {
@@ -67,7 +65,7 @@ export const Leaderboard: React.FC = () => {
           case "week":
             startDate.setDate(now.getDate() - 7);
             break;
-          case "month":
+          case "month": // Corrected from month to month - 1
             startDate.setMonth(now.getMonth() - 1);
             break;
         }
@@ -108,7 +106,7 @@ export const Leaderboard: React.FC = () => {
             "Unknown User",
           score: scoreType === "totalReps" ? scores.totalReps : scores.totalSets,
           location: scores.location,
-          timestamp: new Date().toISOString(),
+          timestamp: new Date().toISOString(), // This timestamp is for the entry creation, not activity
         }))
         .sort((a, b) => b.score - a.score);
 
@@ -121,7 +119,7 @@ export const Leaderboard: React.FC = () => {
 
   useEffect(() => {
     fetchLeaderboard();
-  }, [scoreType, timeRange, session]);
+  }, [scoreType, timeRange]);
 
   // every 10 seconds, fetch the leaderboard
   /*
@@ -134,88 +132,99 @@ export const Leaderboard: React.FC = () => {
   */
 
   return (
-    <div className="max-w-4xl mx-auto p-2 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
-        <h2 className="text-2xl font-bold">Leaderboard</h2>
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-end">
-          {/* Score Type Segmented Control */}
-          <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden">
-            {["totalReps", "totalSets"].map((type) => (
-              <button
-                key={type}
-                onClick={() => setScoreType(type as ScoreType)}
-                className={`px-4 py-2 text-sm font-medium focus:outline-none transition-all duration-150
-                  ${
-                    scoreType === type
-                      ? "bg-blue-500 text-white"
-                      : "bg-transparent text-gray-700 dark:text-gray-200"
-                  }
-                  ${type === "totalReps" ? "rounded-l-lg" : "rounded-r-lg"}
-                `}>
-                {type === "totalReps" ? "Total Reps" : "Total Sets"}
-              </button>
-            ))}
+    <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      {" "}
+      <div className="mb-6">
+        {" "}
+        <h2 className="text-2xl font-bold mb-2">Leaderboard</h2>
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center">
+          {" "}
+          <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
+            {" "}
+            <div className="grid grid-cols-2">
+              {" "}
+              {["totalReps", "totalSets"].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setScoreType(type as ScoreType)}
+                  className={`px-3 py-2 text-sm font-semibold focus:outline-none transition-colors duration-150
+                    ${
+                      scoreType === type
+                        ? "bg-blue-500 text-white"
+                        : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600" // Added hover
+                    }`}>
+                  {type === "totalReps" ? "Total Reps" : "Total Sets"}
+                </button>
+              ))}
+            </div>
           </div>
-          {/* Time Range Segmented Control */}
-          <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden">
-            {[
-              { label: "24h", value: "day" },
-              { label: "Week", value: "week" },
-              { label: "Month", value: "month" },
-              { label: "All", value: "all" },
-            ].map((range, idx, arr) => (
-              <button
-                key={range.value}
-                onClick={() => setTimeRange(range.value as any)}
-                className={`px-3 py-2 text-sm font-medium focus:outline-none transition-all duration-150
-                  ${
-                    timeRange === range.value
-                      ? "bg-blue-500 text-white"
-                      : "bg-transparent text-gray-700 dark:text-gray-200"
-                  }
-                  ${idx === 0 ? "rounded-l-lg" : idx === arr.length - 1 ? "rounded-r-lg" : ""}
-                `}>
-                {range.label}
-              </button>
-            ))}
+          <div className="rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
+            {" "}
+            <div className="grid grid-cols-4">
+              {" "}
+              {[
+                { label: "24h", value: "day" },
+                { label: "Week", value: "week" },
+                { label: "Month", value: "month" },
+                { label: "All", value: "all" },
+              ].map((range) => (
+                <button
+                  key={range.value}
+                  onClick={() => setTimeRange(range.value as any)}
+                  className={`px-2 py-1 text-xs font-semibold focus:outline-none transition-colors duration-150
+                    ${
+                      timeRange === range.value
+                        ? "bg-blue-500 text-white"
+                        : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                    }`}>
+                  {range.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
           {error}
         </div>
       )}
-
+      {/* Leaderboard entries rendering */}
       <div className="space-y-4">
-        {entries.map((entry, index) => (
-          <div
-            key={entry.id}
-            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-            <div className="flex items-center space-x-4">
-              <div
-                className={`w-8 h-8 flex items-center justify-center text-white rounded-full ${
-                  index === 0
-                    ? "bg-yellow-500"
-                    : index === 1
-                    ? "bg-gray-400"
-                    : index === 2
-                    ? "bg-amber-600"
-                    : "bg-blue-500"
-                }`}>
-                {index + 1}
+        {entries.length === 0 && !error ? (
+          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+            No leaderboard entries to show.
+          </p>
+        ) : (
+          entries.map((entry, index) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+              <div className="flex items-center space-x-4">
+                <div
+                  className={`w-8 h-8 flex items-center justify-center text-white rounded-full font-bold text-sm ${
+                    index === 0
+                      ? "bg-yellow-500"
+                      : index === 1
+                      ? "bg-gray-400"
+                      : index === 2
+                      ? "bg-amber-600"
+                      : "bg-blue-500"
+                  }`}>
+                  {index + 1}
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-white">{entry.username}</div>{" "}
+                  <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
+                </div>
               </div>
-              <div>
-                <div className="font-medium">{entry.username}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
+              <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                {" "}
+                {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
               </div>
             </div>
-            <div className="text-lg font-semibold">
-              {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

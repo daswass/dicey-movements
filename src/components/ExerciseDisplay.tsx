@@ -1,5 +1,5 @@
-import React from "react";
 import { CheckCircle, Clock } from "lucide-react";
+import React from "react";
 import { WorkoutSession } from "../types";
 
 interface ExerciseDisplayProps {
@@ -7,7 +7,7 @@ interface ExerciseDisplayProps {
   onComplete: () => Promise<void>;
 }
 
-const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session, onComplete }) => {
+const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session }) => {
   const { exercise, reps, multiplier, diceRoll, timestamp } = session;
   const formattedTime = new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",
