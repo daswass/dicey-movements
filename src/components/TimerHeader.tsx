@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
+import { useTimerWorker } from "../contexts/TimerWorkerContext";
 
 interface TimerHeaderProps {
   duration: number;
@@ -17,14 +18,13 @@ const TimerHeader: React.FC<TimerHeaderProps> = ({
   timeLeft,
   setTimeLeft,
 }) => {
-  const timerWorkerRef = useRef<Worker | null>(null);
+  const { worker } = useTimerWorker();
 
   useEffect(() => {
-    // Initialize timer worker
-    timerWorkerRef.current = new Worker(new URL("../workers/timer.worker.ts", import.meta.url));
+    if (!worker) return;
 
     // Handle worker messages
-    timerWorkerRef.current.onmessage = (e) => {
+    worker.onmessage = (e) => {
       const { type, timeLeft: newTimeLeft } = e.data;
 
       switch (type) {
@@ -37,26 +37,26 @@ const TimerHeader: React.FC<TimerHeaderProps> = ({
           break;
       }
     };
-
-    return () => {
-      timerWorkerRef.current?.terminate();
-    };
-  }, [onComplete, setTimeLeft]);
+  }, [worker, onComplete, setTimeLeft]);
 
   useEffect(() => {
+    if (!worker) return;
+
     if (resetSignal) {
       setTimeLeft(duration);
-      timerWorkerRef.current?.postMessage({ type: "STOP" });
+      worker.postMessage({ type: "STOP" });
     }
-  }, [resetSignal, duration, setTimeLeft]);
+  }, [resetSignal, duration, setTimeLeft, worker]);
 
   useEffect(() => {
+    if (!worker) return;
+
     if (isActive && timeLeft > 0) {
-      timerWorkerRef.current?.postMessage({ type: "START", duration: timeLeft });
+      worker.postMessage({ type: "START", duration: timeLeft });
     } else {
-      timerWorkerRef.current?.postMessage({ type: "STOP" });
+      worker.postMessage({ type: "STOP" });
     }
-  }, [isActive, timeLeft]);
+  }, [isActive, timeLeft, worker]);
 
   return (
     <div className="flex items-center space-x-2">

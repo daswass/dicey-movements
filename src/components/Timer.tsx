@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useTimerWorker } from "../contexts/TimerWorkerContext";
 
 interface TimerProps {
   duration: number;
@@ -17,7 +18,7 @@ const Timer: React.FC<TimerProps> = ({
   timeLeft,
   setTimeLeft,
 }) => {
-  const timerWorkerRef = useRef<Worker | null>(null);
+  const { worker } = useTimerWorker();
   const [progressPercentage, setProgressPercentage] = useState((timeLeft / duration) * 100);
 
   // Update progress when duration or timeLeft changes
@@ -27,11 +28,10 @@ const Timer: React.FC<TimerProps> = ({
   }, [timeLeft, duration]);
 
   useEffect(() => {
-    // Initialize timer worker
-    timerWorkerRef.current = new Worker(new URL("../workers/timer.worker.ts", import.meta.url));
+    if (!worker) return;
 
     // Handle worker messages
-    timerWorkerRef.current.onmessage = (e) => {
+    worker.onmessage = (e) => {
       const { type, timeLeft: newTimeLeft } = e.data;
 
       switch (type) {
@@ -44,19 +44,17 @@ const Timer: React.FC<TimerProps> = ({
           break;
       }
     };
-
-    return () => {
-      timerWorkerRef.current?.terminate();
-    };
-  }, [onComplete, setTimeLeft]);
+  }, [worker, onComplete, setTimeLeft]);
 
   useEffect(() => {
+    if (!worker) return;
+
     if (isActive && timeLeft > 0) {
-      timerWorkerRef.current?.postMessage({ type: "START", duration: timeLeft });
+      worker.postMessage({ type: "START", duration: timeLeft });
     } else {
-      timerWorkerRef.current?.postMessage({ type: "STOP", duration: timeLeft });
+      worker.postMessage({ type: "STOP", duration: timeLeft });
     }
-  }, [isActive, timeLeft]);
+  }, [isActive, timeLeft, worker]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);

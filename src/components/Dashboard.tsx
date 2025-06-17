@@ -13,6 +13,7 @@ import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
+import { useTimerWorker } from "../contexts/TimerWorkerContext";
 
 interface DashboardProps {
   session: Session;
@@ -55,6 +56,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   isTimerActive,
   setIsTimerActive,
 }) => {
+  const { worker } = useTimerWorker();
   const [multipliers, setMultipliers] = useState<ExerciseMultipliers>(() => {
     return (
       loadFromLocalStorage("multipliers") || {
@@ -126,11 +128,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [user]);
 
   useEffect(() => {
-    // Initialize timer worker
-    timerWorkerRef.current = new Worker(new URL("../workers/timer.worker.ts", import.meta.url));
+    if (!worker) return;
 
     // Handle worker messages
-    timerWorkerRef.current.onmessage = (e) => {
+    worker.onmessage = (e) => {
       const { type, timeLeft: newTimeLeft } = e.data;
 
       switch (type) {
@@ -157,11 +158,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
-
-    return () => {
-      timerWorkerRef.current?.terminate();
-    };
-  }, []);
+  }, [worker, setTimeLeft, setIsTimerRunning, setTimerComplete]);
 
   const fetchHistory = async () => {
     if (!user) return;

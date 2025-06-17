@@ -8,6 +8,7 @@ import { Friends } from "./components/Friends";
 import TimerHeader from "./components/TimerHeader";
 import { AppSettings } from "./types";
 import { supabase } from "./utils/supabaseClient";
+import { TimerWorkerProvider } from "./contexts/TimerWorkerContext";
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -79,10 +80,6 @@ function App() {
   };
 
   useEffect(() => {
-    console.log("Timer state changed - timeLeft:", timeLeft, "isActive:", isTimerActive);
-  }, [timeLeft, isTimerActive]);
-
-  useEffect(() => {
     setTimeLeft(userProfile?.timer_duration);
   }, [userProfile?.timer_duration]);
 
@@ -111,89 +108,91 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen bg-gray-900 text-white">
-        <nav className="bg-gray-800 shadow-lg">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex justify-between h-16">
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <span className="text-blue-600 dark:text-blue-400">Dicey</span>
-                <span className="text-red-500 dark:text-red-400">Movements</span>
-              </h1>
-              {/* Name and sign out all the way to the right */}
-              <div className="flex items-center space-x-8 ml-auto">
-                <div className="flex items-center space-x-8">
-                  <Link
-                    to="/"
-                    className={`px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 ${
-                      isTimerActive && timeLeft <= 10 ? "animate-pulse text-red-500" : ""
-                    }`}>
-                    Game
-                  </Link>
-                  {userProfile && showTimerHeader && (
-                    <TimerHeader
-                      duration={userProfile.timer_duration}
-                      onComplete={handleTimerComplete}
-                      resetSignal={currentWorkoutComplete}
-                      isActive={isTimerActive}
-                      timeLeft={timeLeft}
-                      setTimeLeft={setTimeLeft}
-                    />
-                  )}
-                  <Link
-                    to="/friends"
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
-                    Friends
-                  </Link>
-                  <Link
-                    to="/activity"
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
-                    Activity
-                  </Link>
-                </div>
+      <TimerWorkerProvider>
+        <div className="min-h-screen bg-gray-900 text-white">
+          <nav className="bg-gray-800 shadow-lg">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="flex justify-between h-16">
+                <h1 className="text-2xl font-bold flex items-center gap-2">
+                  <span className="text-blue-600 dark:text-blue-400">Dicey</span>
+                  <span className="text-red-500 dark:text-red-400">Movements</span>
+                </h1>
+                {/* Name and sign out all the way to the right */}
+                <div className="flex items-center space-x-8 ml-auto">
+                  <div className="flex items-center space-x-8">
+                    <Link
+                      to="/"
+                      className={`px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 ${
+                        isTimerActive && timeLeft <= 10 ? "animate-pulse text-red-500" : ""
+                      }`}>
+                      Game
+                    </Link>
+                    {userProfile && showTimerHeader && (
+                      <TimerHeader
+                        duration={userProfile.timer_duration}
+                        onComplete={handleTimerComplete}
+                        resetSignal={currentWorkoutComplete}
+                        isActive={isTimerActive}
+                        timeLeft={timeLeft}
+                        setTimeLeft={setTimeLeft}
+                      />
+                    )}
+                    <Link
+                      to="/friends"
+                      className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                      Friends
+                    </Link>
+                    <Link
+                      to="/activity"
+                      className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                      Activity
+                    </Link>
+                  </div>
 
-                <div className="flex items-center space-x-4 ml-auto">
-                  <span className="text-sm font-medium">Hey {userProfile?.first_name}!</span>
-                  <button
-                    onClick={() => supabase.auth.signOut()}
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
-                    Sign Out
-                  </button>
+                  <div className="flex items-center space-x-4 ml-auto">
+                    <span className="text-sm font-medium">Hey {userProfile?.first_name}!</span>
+                    <button
+                      onClick={() => supabase.auth.signOut()}
+                      className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </nav>
+          </nav>
 
-        {settings && (
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Dashboard
-                  session={session}
-                  settings={settings}
-                  updateSettings={updateSettings}
-                  timerComplete={timerComplete}
-                  setTimerComplete={setTimerComplete}
-                  currentWorkoutComplete={currentWorkoutComplete}
-                  setCurrentWorkoutComplete={setCurrentWorkoutComplete}
-                  onStartTimer={handleStartTimer}
-                  timeLeft={timeLeft}
-                  setTimeLeft={setTimeLeft}
-                  isTimerActive={isTimerActive}
-                  setIsTimerActive={setIsTimerActive}
-                />
-              }
-            />
-            <Route path="/friends" element={<Friends />} />
-            <Route path="/activity" element={<FriendActivity />} />
-          </Routes>
-        )}
+          {settings && (
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <Dashboard
+                    session={session}
+                    settings={settings}
+                    updateSettings={updateSettings}
+                    timerComplete={timerComplete}
+                    setTimerComplete={setTimerComplete}
+                    currentWorkoutComplete={currentWorkoutComplete}
+                    setCurrentWorkoutComplete={setCurrentWorkoutComplete}
+                    onStartTimer={handleStartTimer}
+                    timeLeft={timeLeft}
+                    setTimeLeft={setTimeLeft}
+                    isTimerActive={isTimerActive}
+                    setIsTimerActive={setIsTimerActive}
+                  />
+                }
+              />
+              <Route path="/friends" element={<Friends />} />
+              <Route path="/activity" element={<FriendActivity />} />
+            </Routes>
+          )}
 
-        <footer className="text-center p-4 text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-          © {new Date().getFullYear()} Wassercise | POWER {dayOfWeek}!
-        </footer>
-      </div>
+          <footer className="text-center p-4 text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
+            © {new Date().getFullYear()} Wassercise | POWER {dayOfWeek}!
+          </footer>
+        </div>
+      </TimerWorkerProvider>
     </Router>
   );
 }
