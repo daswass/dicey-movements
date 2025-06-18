@@ -1,82 +1,94 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
 
 interface TimerProps {
-  duration: number;
-  onComplete: () => void;
-  isActive: boolean;
-  setIsActive: (active: boolean) => void;
-  timeLeft: number;
-  setTimeLeft: (time: number) => void;
+  duration: number; // The initial total duration for progress calculation (from user profile)
+  onComplete: () => void; // Callback to Dashboard when timer visually completes
 }
 
 const Timer: React.FC<TimerProps> = ({
-  duration,
+  duration, // This is the original duration for the progress bar.
   onComplete,
-  isActive,
-  setIsActive,
-  timeLeft,
-  setTimeLeft,
 }) => {
-  const { worker } = useTimerWorker();
-  const [progressPercentage, setProgressPercentage] = useState((timeLeft / duration) * 100);
+  // Destructure state and control functions directly from the context
+  const { isTimerActive, timeLeft, startTimer, stopTimer, pauseTimer, resumeTimer } =
+    useTimerWorker();
 
-  // Update progress when duration or timeLeft changes
+  // Initial progress percentage state
+  // Start with 100% visually if timeLeft is equal to duration (ready state)
+  const [progressPercentage, setProgressPercentage] = useState<number>(() => {
+    if (duration <= 0) return 0;
+    if (!isTimerActive && timeLeft === duration) return 100;
+    return (timeLeft / duration) * 100;
+  });
+
+  // Effect to update progress percentage
   useEffect(() => {
-    const progress = (timeLeft / duration) * 100;
-    setProgressPercentage(progress);
-  }, [timeLeft, duration]);
-
-  useEffect(() => {
-    if (!worker) return;
-
-    // Handle worker messages
-    worker.onmessage = (e) => {
-      const { type, timeLeft: newTimeLeft } = e.data;
-
-      switch (type) {
-        case "TICK":
-          setTimeLeft(newTimeLeft);
-          break;
-        case "COMPLETE":
-          setTimeLeft(0);
-          onComplete();
-          break;
-      }
-    };
-  }, [worker, onComplete, setTimeLeft]);
-
-  useEffect(() => {
-    if (!worker) return;
-
-    if (isActive && timeLeft > 0) {
-      worker.postMessage({ type: "START", duration: timeLeft });
-    } else {
-      worker.postMessage({ type: "STOP", duration: timeLeft });
+    if (duration <= 0) {
+      setProgressPercentage(0);
+      return;
     }
-  }, [isActive, timeLeft, worker]);
 
-  const formatTime = (seconds: number): string => {
+    // If timer is not active AND timeLeft is exactly the duration, it means it's ready to start.
+    // In this state, the progress should visually be 100%.
+    if (!isTimerActive && timeLeft === duration) {
+      setProgressPercentage(100);
+    } else {
+      // For all other states (running, paused, completed, or starting from non-full time), calculate
+      const newProgress = (timeLeft / duration) * 100;
+      setProgressPercentage(newProgress);
+    }
+  }, [timeLeft, duration, isTimerActive]); // Depends on these states
+
+  // Handle timer completion (visual only, context manages actual state)
+  useEffect(() => {
+    // Trigger onComplete when timeLeft is 0 AND timer is not active AND duration was greater than 0
+    if (timeLeft === 0 && !isTimerActive && duration > 0) {
+      onComplete(); // Notify the parent component (Dashboard)
+    }
+  }, [timeLeft, isTimerActive, onComplete, duration]);
+
+  const formatTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
+  }, []);
 
-  const getColorClass = () => {
+  const getColorClass = useCallback(() => {
     if (progressPercentage > 66) return "text-green-500 dark:text-green-400";
     if (progressPercentage > 33) return "text-yellow-500 dark:text-yellow-400";
     return "text-red-500 dark:text-red-400";
-  };
+  }, [progressPercentage]);
 
-  const handleStart = () => {
-    console.log("Timer component - Start button clicked, continuing from:", timeLeft);
-    setIsActive(true);
-  };
+  const handleStart = useCallback(() => {
+    console.log("Timer component - Start button clicked. Starting duration:", duration);
+    startTimer(duration); // Start with the full duration from props
+  }, [startTimer, duration]);
 
-  const handlePause = () => {
-    console.log("Timer component - Pause button clicked, pausing at:", timeLeft);
-    setIsActive(false);
-  };
+  const handlePause = useCallback(() => {
+    console.log("Timer component - Pause button clicked.");
+    pauseTimer();
+  }, [pauseTimer]);
+
+  const handleResume = useCallback(() => {
+    console.log("Timer component - Resume button clicked.");
+    resumeTimer();
+  }, [resumeTimer]);
+
+  // Redefine the state flags for accurate button display logic
+  const isReadyToStart = !isTimerActive && timeLeft === duration && duration > 0; // At full duration, not active, and a valid duration is set
+  const isRunning = isTimerActive && timeLeft > 0; // Timer is active and has time left
+  const isPaused = !isTimerActive && timeLeft > 0 && timeLeft < duration; // Not active, but time left is between 0 and full duration
+  const isCompleted = timeLeft === 0 && !isTimerActive && duration > 0; // Timer finished naturally
+
+  // Determine what text to show for the status
+  const statusText = isRunning
+    ? "Running"
+    : isPaused
+    ? "Paused"
+    : isCompleted
+    ? "Completed"
+    : "Ready";
 
   return (
     <div className="flex flex-col items-center">
@@ -87,12 +99,14 @@ const Timer: React.FC<TimerProps> = ({
             cy="50"
             r="45"
             fill="none"
-            stroke={timeLeft === 0 ? "#10B981" : "#E5E7EB"}
+            stroke={isCompleted ? "#10B981" : "#E5E7EB"} // Green when complete, otherwise light gray
             strokeWidth="8"
             className="dark:stroke-gray-700"
           />
 
-          {timeLeft > 0 && (
+          {/* Show progress circle if time is left OR if it's the initial/ready state (full circle) */}
+          {/* This condition now relies on isReadyToStart to ensure a full circle is drawn when ready */}
+          {(timeLeft > 0 || isReadyToStart) && (
             <circle
               cx="50"
               cy="50"
@@ -100,10 +114,10 @@ const Timer: React.FC<TimerProps> = ({
               fill="none"
               stroke={
                 progressPercentage > 66
-                  ? "#10B981"
+                  ? "#10B981" // Green
                   : progressPercentage > 33
-                  ? "#F59E0B"
-                  : "#EF4444"
+                  ? "#F59E0B" // Yellow
+                  : "#EF4444" // Red
               }
               strokeWidth="8"
               strokeDasharray="283"
@@ -117,26 +131,36 @@ const Timer: React.FC<TimerProps> = ({
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className={`text-4xl font-bold ${getColorClass()}`}>
-            {timeLeft === 0 ? "Done!" : formatTime(timeLeft)}
+            {isCompleted ? "Done!" : formatTime(timeLeft)}
           </span>
-          <span className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {isActive ? "Running" : timeLeft === 0 ? "Completed" : "Paused"}
-          </span>
+          <span className="text-sm text-gray-500 dark:text-gray-400 mt-1">{statusText}</span>
         </div>
       </div>
       <div className="flex space-x-4 mt-4">
-        {!isActive && timeLeft > 0 && (
+        {/* Start Button: Only if ready to start a new cycle */}
+        {isReadyToStart && (
           <button
             onClick={handleStart}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
             Start
           </button>
         )}
-        {isActive && timeLeft > 0 && (
+
+        {/* Pause Button: Only if currently running */}
+        {isRunning && (
           <button
             onClick={handlePause}
             className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">
             Pause
+          </button>
+        )}
+
+        {/* Resume Button: Only if paused */}
+        {isPaused && (
+          <button
+            onClick={handleResume}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            Resume
           </button>
         )}
       </div>

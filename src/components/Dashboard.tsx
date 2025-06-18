@@ -1,10 +1,9 @@
 import { Session } from "@supabase/supabase-js";
 import { Settings } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { getExerciseById } from "../data/exercises";
 import { AppSettings, ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
-import { getUserLocation, getUserProfile, updateUserProfile } from "../utils/socialService";
 import { loadFromLocalStorage, saveToLocalStorage } from "../utils/storage";
 import { supabase } from "../utils/supabaseClient";
 import DiceRoller from "./DiceRoller";
@@ -13,7 +12,6 @@ import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
-import { useTimerWorker } from "../contexts/TimerWorkerContext";
 
 interface DashboardProps {
   session: Session;
@@ -24,13 +22,16 @@ interface DashboardProps {
   currentWorkoutComplete: boolean;
   setCurrentWorkoutComplete: (complete: boolean) => void;
   onStartTimer: () => void;
+  onPauseTimer: () => void;
+  onResumeTimer: () => void;
+  onStopTimer: () => void;
+  onResetTimerToDuration: (newDuration: number) => void;
   timeLeft: number;
-  setTimeLeft: (time: number) => void;
   isTimerActive: boolean;
-  setIsTimerActive: (active: boolean) => void;
+  userProfile: UserProfile | null;
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>; // Receive setUserProfile
 }
 
-// Define Activity type for activities table
 interface Activity {
   id: string;
   user_id: string;
@@ -51,12 +52,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   currentWorkoutComplete,
   setCurrentWorkoutComplete,
   onStartTimer,
+  onPauseTimer,
+  onResumeTimer,
+  onStopTimer,
+  onResetTimerToDuration,
   timeLeft,
-  setTimeLeft,
   isTimerActive,
-  setIsTimerActive,
+  userProfile, // From App.tsx
+  setUserProfile, // From App.tsx
 }) => {
-  const { worker } = useTimerWorker();
   const [multipliers, setMultipliers] = useState<ExerciseMultipliers>(() => {
     return (
       loadFromLocalStorage("multipliers") || {
@@ -79,10 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     show: boolean;
     type: "game" | "multipliers" | null;
   }>({ show: false, type: null });
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const timerWorkerRef = useRef<Worker | null>(null);
+  const [user, setUser] = useState<any>(null); // Keep this for user.id logic etc.
   const [currentExercise, setCurrentExercise] = useState<any | null>(null);
   const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
@@ -107,60 +108,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
   }, []);
 
-  useEffect(() => {
-    if (!user) {
-      setUserProfile(null);
-      return;
-    }
-    const fetchProfile = async () => {
-      let profile = await getUserProfile();
-      if (!profile) {
-        // Create a new profile if it doesn't exist
-        const location = await getUserLocation();
-        profile = await updateUserProfile({
-          username: user.email.split("@")[0],
-          location,
-        });
-      }
-      setUserProfile(profile);
-    };
-    fetchProfile();
-  }, [user]);
-
-  useEffect(() => {
-    if (!worker) return;
-
-    // Handle worker messages
-    worker.onmessage = (e) => {
-      const { type, timeLeft: newTimeLeft } = e.data;
-
-      switch (type) {
-        case "TICK":
-          setTimeLeft(newTimeLeft);
-          break;
-        case "COMPLETE":
-          setTimeLeft(0);
-          setIsTimerRunning(false);
-          setTimerComplete(true);
-
-          // Show notification if browser supports it
-          if ("Notification" in window && Notification.permission === "granted") {
-            new Notification("Workout Timer", {
-              body: "Your rest period is complete!",
-              icon: "/dice.png",
-            });
-          }
-          break;
-      }
-    };
-
-    // Request notification permission
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }, [worker, setTimeLeft, setIsTimerRunning, setTimerComplete]);
-
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("activities")
@@ -170,27 +118,20 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!error) {
       setHistory(data);
     } else {
-      console.error("Error fetching history:", error);
+      console.error("Dashboard: Error fetching history:", error);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) fetchHistory();
-  }, [user]);
+  }, [user, fetchHistory]);
 
-  const handleTimerComplete = () => {
+  const handleTimerComplete = useCallback(() => {
     setTimerComplete(true);
     setCurrentWorkoutComplete(false);
+  }, [setTimerComplete, setCurrentWorkoutComplete]);
 
-    if (notificationsEnabled && "Notification" in window && Notification.permission === "granted") {
-      new Notification("Workout Timer", {
-        body: "Your rest period is complete!",
-        icon: "/dice.png",
-      });
-    }
-  };
-
-  const handleWorkoutComplete = async () => {
+  const handleWorkoutComplete = useCallback(async () => {
     setShowHighFiveModal(true);
 
     setTimeout(() => {
@@ -198,11 +139,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     }, 2000);
 
     if (!latestSession) return;
-    console.log("Inserting activity:", latestSession);
+    console.log("Dashboard: Inserting activity:", latestSession);
 
-    // Create the new activity object
     const newActivity = {
-      id: crypto.randomUUID(), // Generate a temporary ID
+      id: crypto.randomUUID(),
       user_id: user.id,
       timestamp: new Date().toISOString(),
       exercise_id: latestSession.exercise.id,
@@ -212,18 +152,14 @@ const Dashboard: React.FC<DashboardProps> = ({
       dice_roll: latestSession.diceRoll,
     };
 
-    // Update local history immediately
     setHistory((prevHistory) => [newActivity, ...prevHistory]);
 
-    // Insert into database
     const { error } = await supabase.from("activities").insert(newActivity);
     if (error) {
-      console.error("Error inserting activity:", error);
-      // Revert local history if database insert fails
+      console.error("Dashboard: Error inserting activity:", error);
       setHistory((prevHistory) => prevHistory.slice(1));
     }
 
-    // Increment multiplier for the completed exercise
     setMultipliers((prev) => ({
       ...prev,
       [latestSession.exercise.id]: (prev[latestSession.exercise.id] || 1) + 1,
@@ -235,9 +171,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     onStartTimer();
 
     setLatestSession(null);
-  };
+  }, [
+    latestSession,
+    user,
+    setHistory,
+    setMultipliers,
+    setCurrentWorkoutComplete,
+    setTimerComplete,
+    onStartTimer,
+  ]);
 
-  const resetMultipliers = () => {
+  const resetMultipliers = useCallback(() => {
     setMultipliers({
       1: 1,
       2: 1,
@@ -246,9 +190,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       5: 1,
       6: 1,
     });
-  };
+  }, []);
 
-  const fetchLastSessionStart = async () => {
+  const fetchLastSessionStart = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("profiles")
@@ -258,20 +202,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!error && data) {
       setLastSessionStart(data.last_session_start ? new Date(data.last_session_start) : null);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) fetchLastSessionStart();
-  }, [user]);
+  }, [user, fetchLastSessionStart]);
 
-  const resetAll = async () => {
-    console.log("Resetting all session state");
+  const resetAll = useCallback(async () => {
+    console.log("Dashboard: Resetting all session state");
     setMultipliers({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 });
     setLatestSession(null);
     setCurrentWorkoutComplete(false);
     setTimerComplete(false);
 
-    // Update last_session_start in DB
     const { error } = await supabase
       .from("profiles")
       .update({ last_session_start: new Date().toISOString() })
@@ -280,21 +223,29 @@ const Dashboard: React.FC<DashboardProps> = ({
       await fetchLastSessionStart();
       await fetchHistory();
     }
-  };
+  }, [
+    user,
+    fetchLastSessionStart,
+    fetchHistory,
+    setMultipliers,
+    setLatestSession,
+    setCurrentWorkoutComplete,
+    setTimerComplete,
+  ]);
 
-  const getTotalSetsToday = () => {
+  const getTotalSetsToday = useCallback(() => {
     if (!lastSessionStart) return 0;
     return history.filter((session) => new Date(session.timestamp) > lastSessionStart).length;
-  };
+  }, [lastSessionStart, history]);
 
-  const getTotalRepsToday = () => {
+  const getTotalRepsToday = useCallback(() => {
     if (!lastSessionStart) return 0;
     return history
       .filter((session) => new Date(session.timestamp) > lastSessionStart)
       .reduce((total, session) => total + session.reps, 0);
-  };
+  }, [lastSessionStart, history]);
 
-  const getRepsPerExerciseToday = () => {
+  const getRepsPerExerciseToday = useCallback(() => {
     if (!lastSessionStart) return {};
     const repsByExercise: Record<number, number> = {};
     history
@@ -304,74 +255,97 @@ const Dashboard: React.FC<DashboardProps> = ({
           (repsByExercise[session.exercise_id] || 0) + session.reps;
       });
     return repsByExercise;
-  };
+  }, [lastSessionStart, history]);
 
-  const handleResetClick = (type: "game" | "multipliers") => {
+  const handleResetClick = useCallback((type: "game" | "multipliers") => {
     setShowConfirmModal({ show: true, type });
-  };
+  }, []);
 
-  const handleConfirmReset = () => {
+  const handleConfirmReset = useCallback(() => {
     if (showConfirmModal.type === "game") {
       resetAll();
     } else if (showConfirmModal.type === "multipliers") {
       resetMultipliers();
     }
     setShowConfirmModal({ show: false, type: null });
-  };
+  }, [showConfirmModal.type, resetAll, resetMultipliers]);
 
-  const handleCancelReset = () => {
+  const handleCancelReset = useCallback(() => {
     setShowConfirmModal({ show: false, type: null });
-  };
+  }, []);
 
-  const handleDiceRoll = (session: any) => {
+  const handleDiceRoll = useCallback((session: any) => {
     setCurrentExercise(session.exercise);
     setCurrentWorkoutComplete(false);
     setLatestSession(session);
-  };
+  }, []);
 
-  // Filter activities for the current session
   const sessionHistory = lastSessionStart
     ? history.filter((session) => new Date(session.timestamp) > lastSessionStart)
     : [];
 
-  // Fetch timer_duration and notifications_enabled from profile
-  const fetchProfileSettings = async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("timer_duration, notifications_enabled")
-      .eq("id", user.id)
-      .single();
-    if (!error && data) {
-      if (userProfile && data.timer_duration) {
-        userProfile.timer_duration = data.timer_duration;
+  const updateNotificationsEnabled = useCallback(
+    async (enabled: boolean) => {
+      setNotificationsEnabled(enabled);
+      if (user) {
+        // Use the setUserProfile prop from App.tsx to update its state
+        // This will update the userProfile in App.tsx with the new notifications_enabled
+        setUserProfile((prev) => (prev ? { ...prev, notifications_enabled: enabled } : null));
+        await supabase
+          .from("profiles")
+          .update({ notifications_enabled: enabled })
+          .eq("id", user.id);
       }
-      if (typeof data.notifications_enabled === "boolean")
-        setNotificationsEnabled(data.notifications_enabled);
-    }
-  };
+    },
+    [user, setUserProfile]
+  );
 
-  useEffect(() => {
-    if (user) fetchProfileSettings();
-  }, [user]);
+  const updateTimerDuration = useCallback(
+    async (newDuration: number) => {
+      console.log("Dashboard: updateTimerDuration received newDuration:", newDuration);
 
-  const updateNotificationsEnabled = async (enabled: boolean) => {
-    setNotificationsEnabled(enabled);
-    if (user) {
-      await supabase.from("profiles").update({ notifications_enabled: enabled }).eq("id", user.id);
-    }
-  };
+      onResetTimerToDuration(newDuration); // Call context to set timeLeft and stop worker
 
-  // On settings change, update timer_duration in DB
-  const updateTimerDuration = async (newDuration: number) => {
-    setIsTimerActive(false);
-    setTimeLeft(newDuration);
-    if (user) {
-      await supabase.from("profiles").update({ timer_duration: newDuration }).eq("id", user.id);
-      // Update local state immediately
-      setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
-    }
-  };
+      if (user) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ timer_duration: newDuration })
+          .eq("id", user.id);
+
+        if (!error) {
+          console.log("Dashboard: DB update successful for timer_duration to:", newDuration);
+          // Step 1: Immediately re-read the userProfile from the database
+          const { data: updatedProfileFromDb, error: fetchError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+
+          if (updatedProfileFromDb && !fetchError) {
+            // Step 2: Use the *confirmed* data from the database to update App.tsx's userProfile state
+            const confirmedProfile = {
+              ...updatedProfileFromDb,
+              timer_duration: updatedProfileFromDb.timer_duration || 300,
+            };
+            setUserProfile(confirmedProfile);
+            console.log(
+              "Dashboard: setUserProfile in App.tsx called with confirmed DB data:",
+              JSON.stringify(confirmedProfile)
+            );
+          } else {
+            console.error("Dashboard: Error re-fetching profile after update:", fetchError);
+            // Fallback if re-fetch fails: update locally with newDuration (less reliable but prevents being stuck)
+            setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
+          }
+        } else {
+          console.error("Dashboard: Error updating timer_duration in DB:", error);
+          // Fallback if DB update fails: update locally with newDuration
+          setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
+        }
+      }
+    },
+    [user, onResetTimerToDuration, setUserProfile]
+  ); // Depend on setUserProfile
 
   if (!user) {
     return null;
@@ -398,14 +372,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <Settings size={20} className="text-gray-500 dark:text-gray-400" />
               </button>
               <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
-              <Timer
-                duration={userProfile?.timer_duration}
-                onComplete={handleTimerComplete}
-                isActive={isTimerActive}
-                setIsActive={setIsTimerActive}
-                timeLeft={timeLeft}
-                setTimeLeft={setTimeLeft}
-              />
+              <Timer duration={userProfile?.timer_duration} onComplete={handleTimerComplete} />
             </div>
           ) : null}
 
@@ -414,9 +381,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="flex justify-between items-start mb-4">
                 <h2 className="text-xl font-semibold">Current Workout</h2>
                 <button
-                  onClick={() => {
-                    handleWorkoutComplete();
-                  }}
+                  onClick={handleWorkoutComplete}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors">
                   Complete Exercise
                 </button>
@@ -436,28 +401,34 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="flex space-x-2">
                 <button
                   onClick={() => handleResetClick("game")}
-                  className="px-3 py-1.5 text-sm hover:bg-red-600 text-white rounded-lg transition-colors">
+                  className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                   Reset Game
                 </button>
                 <button
                   onClick={() => handleResetClick("multipliers")}
-                  className="px-3 py-1.5 text-sm hover:bg-red-600 text-white rounded-lg transition-colors">
+                  className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                   Reset Multipliers
                 </button>
               </div>
             </div>
             <div className="flex justify-between items-center mb-4 pt-2 border-t border-gray-200 dark:border-gray-700">
-              <h4 className="text-md font-medium">Total Sets Today:</h4>
+              <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                Total Sets Today:
+              </h4>
               <span className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {getTotalSetsToday()}
               </span>
-              <h4 className="text-md font-medium">Total Reps Today:</h4>
+            </div>
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                Total Reps Today:
+              </h4>
               <span className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {getTotalRepsToday()}
               </span>
             </div>
 
-            <h4 className="text-md font-medium mb-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <h4 className="text-md font-medium mb-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
               Exercises:
             </h4>
             <div className="space-y-2">
@@ -468,7 +439,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     key={exerciseId}
                     className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
-                    <span className="truncate" title={exercise.name}>
+                    <span
+                      className="truncate text-gray-800 dark:text-gray-200"
+                      title={exercise.name}>
                       {exercise.name}
                     </span>
                     <span className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
@@ -486,8 +459,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {showSettings && userProfile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full relative">
+            <button
+              onClick={() => setShowSettings(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+              &times;
+            </button>
             <h2 className="text-2xl font-bold mb-4">Settings</h2>
             <SettingsPanel
               timerDuration={userProfile?.timer_duration}
@@ -510,9 +488,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       {showConfirmModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-xl font-semibold mb-4">
+            <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
               {showConfirmModal.type === "game" ? "Reset Game?" : "Reset Multipliers?"}
             </h3>
             <p className="text-gray-600 dark:text-gray-300 mb-6">
