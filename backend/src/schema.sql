@@ -41,16 +41,6 @@ CREATE TABLE leaderboard (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Create friend_activities table
-CREATE TABLE friend_activities (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id) NOT NULL,
-    username TEXT NOT NULL,
-    activity_type TEXT NOT NULL,
-    details TEXT NOT NULL,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
 -- Create friends table with proper foreign key references
 CREATE TABLE friends (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
