@@ -93,14 +93,18 @@ app.get("/api/oura/callback", async (req, res) => {
     // Initial sync of activity data
     await OuraService.syncUserActivity(userId, 7);
 
-    res.json({ success: true, message: "Oura integration successful!" });
+    // Redirect to frontend with success status
+    const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
+    res.redirect(`${frontendUrl}/settings?oura=success`);
   } catch (error) {
     console.error("Error in Oura callback:", error);
-    // Return the actual error message
-    res.status(500).json({
-      error: "Failed to complete Oura integration",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    // Redirect to frontend with error status
+    const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
+    res.redirect(
+      `${frontendUrl}/settings?oura=error&message=${encodeURIComponent(
+        error instanceof Error ? error.message : String(error)
+      )}`
+    );
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Activity, Link, Unlink } from "lucide-react";
+import { X, Activity, Link, Unlink, CheckCircle, AlertCircle } from "lucide-react";
 import { OuraService, OuraStatus } from "../utils/ouraService";
 import { supabase } from "../utils/supabaseClient";
 
@@ -24,6 +24,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [ouraMessage, setOuraMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -36,6 +40,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     };
     getCurrentUser();
+
+    // Check URL parameters for Oura callback status
+    const params = new URLSearchParams(window.location.search);
+    const ouraStatus = params.get("oura");
+    const errorMessage = params.get("message");
+
+    if (ouraStatus === "success") {
+      setOuraMessage({ type: "success", text: "Successfully connected to Oura Ring!" });
+      // Remove the URL parameters
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (ouraStatus === "error") {
+      setOuraMessage({
+        type: "error",
+        text: `Failed to connect to Oura Ring. ${
+          errorMessage ? decodeURIComponent(errorMessage) : "Please try again."
+        }`,
+      });
+      // Remove the URL parameters
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   const checkOuraStatus = async (userId: string) => {
@@ -109,6 +133,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       </div>
 
       <div className="space-y-6">
+        {/* Show Oura message if exists */}
+        {ouraMessage && (
+          <div
+            className={`p-4 rounded-lg flex items-center space-x-2 ${
+              ouraMessage.type === "success"
+                ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
+                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
+            }`}>
+            {ouraMessage.type === "success" ? (
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            )}
+            <span className="text-sm">{ouraMessage.text}</span>
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium mb-2">Timer Duration (seconds)</label>
           <input
