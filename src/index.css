@@ -1,3 +1,22 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Header Specifics for App.tsx */
+.nav-link {
+  @apply px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-colors duration-150;
+}
+
+/* Optional: Active link styling (you'd need to add logic to apply this class based on current route) */
+.nav-link.active {
+  @apply bg-blue-700 text-white;
+}
+
+.mobile-nav-link {
+  @apply block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition-colors duration-150;
+}
+
+.btn-secondary {
+  /* For Sign Out button in desktop view */
+  @apply px-3 py-2 rounded-md text-sm font-medium bg-gray-700 text-gray-200 hover:bg-gray-600 transition-colors;
+}

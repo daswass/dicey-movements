@@ -22,6 +22,7 @@ function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [dayOfWeek, setDayOfWeek] = useState<string>("");
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu open/close
 
   const {
     isTimerActive,
@@ -116,50 +117,66 @@ function App() {
     }
   };
 
-  // --- App Settings and timeLeft initialization ---
   useEffect(() => {
     if (userProfile) {
       console.log(
         `[App useEffect UserProfile.Duration] userProfile.timer_duration: ${userProfile.timer_duration}, timeLeft: ${timeLeft}, isActive: ${isTimerActive}`
       );
 
-      setSettings({
-        notificationsEnabled: userProfile.notifications_enabled,
-        darkMode: window.matchMedia("(prefers-color-scheme: dark)").matches,
+      setSettings((prevSettings) => {
+        const defaultAppSettings: AppSettings = {
+          notificationsEnabled: userProfile.notifications_enabled ?? true,
+          darkMode: window.matchMedia("(prefers-color-scheme: dark)").matches,
+        };
+
+        if (prevSettings === null) {
+          return defaultAppSettings;
+        } else {
+          return {
+            ...prevSettings,
+            notificationsEnabled:
+              userProfile.notifications_enabled ?? prevSettings.notificationsEnabled,
+          };
+        }
       });
 
-      // Refined condition to update timeLeft to userProfile.timer_duration:
-      // This should happen if:
-      // 1. The timer is NOT active (!isTimerActive)
-      // 2. AND a valid duration exists (userProfile.timer_duration > 0)
-      // 3. AND (timeLeft is currently 0 OR timeLeft is *exactly* the userProfile.timer_duration)
-      //    This means it's either in a completed state (0) or already set to the full duration (initial state).
-      //    It explicitly EXCLUDES the case where timeLeft is > 0 but < userProfile.timer_duration (i.e., a paused state).
-      const shouldResetToFullDuration =
+      if (
         !isTimerActive &&
-        userProfile.timer_duration > 0 &&
-        (timeLeft === 0 || timeLeft === userProfile.timer_duration);
-
-      if (shouldResetToFullDuration) {
-        // Only set timeLeft if it's not already the correct duration to avoid unnecessary re-renders
-        if (timeLeft !== userProfile.timer_duration) {
-          console.log(
-            `[App useEffect InitTimeLeft] Resetting timeLeft from ${timeLeft} to ${userProfile.timer_duration} because it's idle/completed.`
-          );
-          setTimeLeft(userProfile.timer_duration);
-        }
+        (timeLeft === 0 || timeLeft !== userProfile.timer_duration) &&
+        userProfile.timer_duration > 0
+      ) {
+        console.log(
+          `[App useEffect InitTimeLeft] Updating timeLeft from ${timeLeft} to ${userProfile.timer_duration}. (IsActive: ${isTimerActive})`
+        );
+        setTimeLeft(userProfile.timer_duration);
       }
     } else {
-      // Handles cases where userProfile is null (e.g., logout)
       if (timeLeft !== 0) {
         console.log(
           `[App useEffect UserProfile.Duration] Resetting timeLeft to 0 due to null userProfile.`
         );
         setTimeLeft(0);
       }
-      setSettings(null); // Ensure settings is null if userProfile is null
+      setSettings(null);
     }
   }, [userProfile, isTimerActive, timeLeft, setTimeLeft]);
+
+  const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
+    console.log("App.tsx: Updating settings:", newSettings);
+    setSettings((prev) => {
+      if (prev === null) {
+        return {
+          notificationsEnabled: newSettings.notificationsEnabled ?? false,
+          darkMode: newSettings.darkMode ?? false,
+        };
+      } else {
+        return {
+          ...prev,
+          ...newSettings,
+        };
+      }
+    });
+  }, []);
 
   const handleStartTimer = useCallback(() => {
     if (!userProfile) return;
@@ -169,11 +186,6 @@ function App() {
     setTimerComplete(false);
     setCurrentWorkoutComplete(false);
   }, [userProfile, startWorkerTimer, setIsTimerActive]);
-
-  const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    console.log("App.tsx: Updating settings:", newSettings);
-    setSettings((prev) => ({ ...prev, ...newSettings }));
-  }, []);
 
   const playSound = useCallback(() => {
     if (audioRef.current) {
@@ -243,49 +255,151 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-gray-900 text-white">
-        <nav className="bg-gray-800 shadow-lg">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex justify-between h-16">
-              <h1 className="text-2xl font-bold flex items-center gap-2">
+        {/* Fixed Header Navigation */}
+        {/* Moved padding to nav itself */}
+        <nav className="bg-gray-800 shadow-lg fixed w-full z-50 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            {" "}
+            {/* This div is now just for max-width and centering */}
+            <div className="flex items-center justify-between h-16">
+              {/* Logo/Title (Left Section) */}
+              <h1 className="text-2xl font-bold flex items-center gap-2 flex-shrink-0">
                 <span className="text-blue-600 dark:text-blue-400">Dicey</span>
                 <span className="text-red-500 dark:text-red-400">Movements</span>
               </h1>
-              <div className="flex items-center space-x-8 ml-auto">
-                <div className="flex items-center space-x-8">
-                  <Link
-                    to="/"
-                    className={`px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 ${
-                      isTimerActive && timeLeft <= 10 ? "animate-pulse text-red-500" : ""
-                    }`}>
-                    Game
-                  </Link>
-                  {userProfile && showTimerHeader && (
-                    <TimerHeader isActive={isTimerActive} timeLeft={timeLeft} />
-                  )}
-                  <Link
-                    to="/friends"
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
-                    Friends
-                  </Link>
-                  <Link
-                    to="/activity"
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
-                    Activity
-                  </Link>
-                </div>
 
-                <div className="flex items-center space-x-4 ml-auto">
-                  <span className="text-sm font-medium">Hey {userProfile?.first_name}!</span>
+              {/* Desktop Navigation Links (Middle Section - Hidden on mobile) */}
+              <div className="hidden md:flex flex-grow justify-center space-x-8">
+                <Link to="/" className="nav-link">
+                  Game
+                </Link>
+                {userProfile && showTimerHeader && (
+                  <TimerHeader isActive={isTimerActive} timeLeft={timeLeft} />
+                )}
+                <Link to="/friends" className="nav-link">
+                  Friends
+                </Link>
+                <Link to="/activity" className="nav-link">
+                  Activity
+                </Link>
+              </div>
+
+              {/* User Info & Sign Out (Right Section - Hidden on mobile) */}
+              <div className="hidden md:flex items-center space-x-4 flex-shrink-0">
+                <span className="text-sm font-medium text-gray-200">
+                  Hey {userProfile?.first_name}!
+                </span>
+                <button onClick={() => supabase.auth.signOut()} className="btn-secondary">
+                  Sign Out
+                </button>
+              </div>
+
+              {/* Mobile Menu Button (Hamburger - Visible on mobile) */}
+              <div className="-mr-2 flex md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
+                  aria-controls="mobile-menu"
+                  aria-expanded="false">
+                  <span className="sr-only">Open main menu</span>
+                  {/* Hamburger icon */}
+                  {!isMenuOpen ? (
+                    <svg
+                      className="block h-6 w-6"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden="true">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                  ) : (
+                    <svg
+                      className="block h-6 w-6"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden="true">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Menu (Collapsible) */}
+          {isMenuOpen && (
+            <div className="md:hidden" id="mobile-menu">
+              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <Link to="/" className="mobile-nav-link" onClick={() => setIsMenuOpen(false)}>
+                  Game
+                </Link>
+                {userProfile && showTimerHeader && (
+                  <div className="px-3 py-2 text-sm font-medium text-gray-200">
+                    <TimerHeader isActive={isTimerActive} timeLeft={timeLeft} />
+                  </div>
+                )}
+                <Link
+                  to="/friends"
+                  className="mobile-nav-link"
+                  onClick={() => setIsMenuOpen(false)}>
+                  Friends
+                </Link>
+                <Link
+                  to="/activity"
+                  className="mobile-nav-link"
+                  onClick={() => setIsMenuOpen(false)}>
+                  Activity
+                </Link>
+              </div>
+              <div className="pt-4 pb-3 border-t border-gray-700">
+                <div className="flex items-center px-5">
+                  <div className="flex-shrink-0">
+                    {/* Placeholder User Avatar */}
+                    <svg
+                      className="h-8 w-8 rounded-full text-gray-300"
+                      fill="currentColor"
+                      viewBox="0 0 24 24">
+                      <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <div className="text-base font-medium leading-none text-white">
+                      {userProfile?.first_name}
+                    </div>
+                    <div className="text-sm font-medium leading-none text-gray-400">
+                      {session?.user?.email}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 px-2 space-y-1">
                   <button
-                    onClick={() => supabase.auth.signOut()}
-                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700">
+                    onClick={() => {
+                      supabase.auth.signOut();
+                      setIsMenuOpen(false);
+                    }}
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700">
                     Sign Out
                   </button>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </nav>
+
+        {/* Spacer div to push content below fixed header */}
+        <div className="h-16"></div>
 
         {settings ? (
           <Routes>
