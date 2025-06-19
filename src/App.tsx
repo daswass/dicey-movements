@@ -107,7 +107,7 @@ function App() {
         setUserProfile(null);
       } else if (data) {
         setUserProfile({ ...data, timer_duration: data.timer_duration || 300 });
-        console.log(`App.tsx: Fetched and set userProfile: ${JSON.stringify(data)}`);
+        //console.log(`App.tsx: Fetched and set userProfile: ${JSON.stringify(data)}`);
       }
     } catch (e) {
       console.error("App.tsx: Exception fetching/creating profile:", e);

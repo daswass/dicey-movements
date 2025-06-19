@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react"; // Added useRef
 import { supabase } from "../utils/supabaseClient";
 
 interface LeaderboardEntry {
@@ -31,13 +31,9 @@ export const Leaderboard: React.FC = () => {
   const [scoreType, setScoreType] = useState<ScoreType>("totalReps");
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("week");
 
-  const fetchLeaderboard = async () => {
+  // Memoize fetchLeaderboard. This function will recreate only when scoreType or timeRange changes.
+  const fetchLeaderboard = useCallback(async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
       let query = supabase
         .from("activities")
         .select(
@@ -54,7 +50,6 @@ export const Leaderboard: React.FC = () => {
         )
         .order("timestamp", { ascending: false });
 
-      // Apply time range filter if needed
       if (timeRange !== "all") {
         const now = new Date();
         let startDate = new Date();
@@ -65,7 +60,7 @@ export const Leaderboard: React.FC = () => {
           case "week":
             startDate.setDate(now.getDate() - 7);
             break;
-          case "month": // Corrected from month to month - 1
+          case "month":
             startDate.setMonth(now.getMonth() - 1);
             break;
         }
@@ -76,10 +71,9 @@ export const Leaderboard: React.FC = () => {
 
       if (error) throw error;
 
-      // Calculate scores for each user
       const userScores = new Map<
         string,
-        { totalReps: number; totalSets: number; location: string }
+        { totalReps: number; totalSets: number; location: string; username: string }
       >();
 
       (data as unknown as Activity[]).forEach((activity) => {
@@ -88,6 +82,7 @@ export const Leaderboard: React.FC = () => {
           totalReps: 0,
           totalSets: 0,
           location: activity.profiles?.location?.city || "Unknown",
+          username: activity.profiles?.username || "Unknown User",
         };
 
         currentScores.totalReps += activity.reps;
@@ -96,17 +91,14 @@ export const Leaderboard: React.FC = () => {
         userScores.set(userId, currentScores);
       });
 
-      // Convert to array and sort
       const formattedEntries = Array.from(userScores.entries())
         .map(([userId, scores]) => ({
           id: userId,
           user_id: userId,
-          username:
-            (data as unknown as Activity[]).find((a) => a.user_id === userId)?.profiles?.username ||
-            "Unknown User",
+          username: scores.username,
           score: scoreType === "totalReps" ? scores.totalReps : scores.totalSets,
           location: scores.location,
-          timestamp: new Date().toISOString(), // This timestamp is for the entry creation, not activity
+          timestamp: new Date().toISOString(),
         }))
         .sort((a, b) => b.score - a.score);
 
@@ -115,34 +107,46 @@ export const Leaderboard: React.FC = () => {
       console.error("Error fetching leaderboard:", err);
       setError("Failed to load leaderboard");
     }
-  };
+  }, [scoreType, timeRange]); // Dependencies for useCallback: fetchLeaderboard re-creates when filters change
 
+  // Initial fetch of leaderboard data on component mount and when filters change
   useEffect(() => {
     fetchLeaderboard();
-  }, [scoreType, timeRange]);
+  }, [fetchLeaderboard]); // Dependency for useEffect: re-run when memoized fetchLeaderboard changes
 
-  // every 10 seconds, fetch the leaderboard
-  /*
+  // --- CRITICAL: Use a ref for fetchLeaderboard and an empty dependency array for the subscription useEffect ---
+  const fetchLeaderboardRef = useRef(fetchLeaderboard);
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchLeaderboard();
-    }, 10000);
-    return () => clearInterval(interval);
+    fetchLeaderboardRef.current = fetchLeaderboard;
+  }, [fetchLeaderboard]); // This useEffect ensures fetchLeaderboardRef.current is always up-to-date
+
+  // Real-time subscription for responsive updates (runs ONCE on mount)
+  useEffect(() => {
+    console.log(
+      "Leaderboard: Setting up Supabase Realtime subscription for 'activities' table changes."
+    );
+
+    const channel = supabase
+      .channel("leaderboard_activities_channel")
+      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, (_) => {
+        console.log("Leaderboard: Realtime change received. Triggering re-fetch.");
+        fetchLeaderboardRef.current();
+      })
+      .subscribe();
+
+    return () => {
+      console.log("Leaderboard: Unsubscribing from Supabase Realtime channel.");
+      supabase.removeChannel(channel);
+    };
   }, []);
-  */
 
   return (
     <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      {" "}
       <div className="mb-6">
-        {" "}
         <h2 className="text-2xl font-bold mb-2">Leaderboard</h2>
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center">
-          {" "}
           <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
-            {" "}
             <div className="grid grid-cols-2">
-              {" "}
               {["totalReps", "totalSets"].map((type) => (
                 <button
                   key={type}
@@ -151,7 +155,7 @@ export const Leaderboard: React.FC = () => {
                     ${
                       scoreType === type
                         ? "bg-blue-500 text-white"
-                        : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600" // Added hover
+                        : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
                     }`}>
                   {type === "totalReps" ? "Total Reps" : "Total Sets"}
                 </button>
@@ -159,9 +163,7 @@ export const Leaderboard: React.FC = () => {
             </div>
           </div>
           <div className="rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
-            {" "}
             <div className="grid grid-cols-4">
-              {" "}
               {[
                 { label: "24h", value: "day" },
                 { label: "Week", value: "week" },
@@ -184,12 +186,13 @@ export const Leaderboard: React.FC = () => {
           </div>
         </div>
       </div>
+
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
           {error}
         </div>
       )}
-      {/* Leaderboard entries rendering */}
+
       <div className="space-y-4">
         {entries.length === 0 && !error ? (
           <p className="text-center text-gray-500 dark:text-gray-400 py-8">
@@ -214,12 +217,11 @@ export const Leaderboard: React.FC = () => {
                   {index + 1}
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900 dark:text-white">{entry.username}</div>{" "}
+                  <div className="font-medium text-gray-900 dark:text-white">{entry.username}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
                 </div>
               </div>
               <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                {" "}
                 {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
               </div>
             </div>

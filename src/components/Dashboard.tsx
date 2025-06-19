@@ -1,11 +1,10 @@
 import { Session } from "@supabase/supabase-js";
 import { Settings } from "lucide-react";
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getExerciseById } from "../data/exercises";
 import { AppSettings, ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
-import { loadFromLocalStorage, saveToLocalStorage } from "../utils/storage";
-import { supabase } from "../utils/supabaseClient";
+import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
 import DiceRoller from "./DiceRoller";
 import ExerciseDisplay from "./ExerciseDisplay";
 import History from "./History";
@@ -39,7 +38,7 @@ interface Activity {
   exercise_id: number;
   exercise_name: string;
   reps: number;
-  multiplier: number;
+  multiplier: number; // This multiplier is the multiplier *at the time of the activity*
   dice_roll: any;
 }
 
@@ -61,21 +60,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   userProfile,
   setUserProfile,
 }) => {
-  const [multipliers, setMultipliers] = useState<ExerciseMultipliers>(() => {
-    return (
-      loadFromLocalStorage("multipliers") || {
-        1: 1,
-        2: 1,
-        3: 1,
-        4: 1,
-        5: 1,
-        6: 1,
-      }
-    );
-  });
+  const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
+
+  // DERIVED STATE: Multipliers based on exerciseCounts (since last_session_start)
+  const multipliers: ExerciseMultipliers = useMemo(() => {
+    const calculatedMultipliers: ExerciseMultipliers = {};
+    for (let i = 1; i <= 6; i++) {
+      calculatedMultipliers[i] = (exerciseCounts[i] || 0) + 1; // Multiplier is 1 + count
+    }
+    return calculatedMultipliers;
+  }, [exerciseCounts]);
 
   const [history, setHistory] = useState<Activity[]>([]);
-
   const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHighFiveModal, setShowHighFiveModal] = useState(false);
@@ -87,14 +83,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [currentExercise, setCurrentExercise] = useState<any | null>(null);
   const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
-
-  useEffect(() => {
-    saveToLocalStorage("multipliers", multipliers);
-  }, [multipliers]);
-
-  useEffect(() => {
-    saveToLocalStorage("workoutHistory", history);
-  }, [history]);
 
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange(
@@ -115,12 +103,26 @@ const Dashboard: React.FC<DashboardProps> = ({
       .select("*")
       .eq("user_id", user.id)
       .order("timestamp", { ascending: false });
-    if (!error) {
-      setHistory(data);
-    } else {
+
+    if (error) {
       console.error("Dashboard: Error fetching history:", error);
+      return;
     }
-  }, [user]);
+
+    const currentExerciseCounts: Record<number, number> = {};
+    const currentLastSessionStart = lastSessionStart;
+
+    (data || []).forEach((activity) => {
+      // Only count activity if it happened AFTER the last session start
+      if (!currentLastSessionStart || new Date(activity.timestamp) > currentLastSessionStart) {
+        currentExerciseCounts[activity.exercise_id] =
+          (currentExerciseCounts[activity.exercise_id] || 0) + 1;
+      }
+    });
+
+    setHistory(data || []);
+    setExerciseCounts(currentExerciseCounts);
+  }, [user, lastSessionStart]);
 
   useEffect(() => {
     if (user) fetchHistory();
@@ -138,8 +140,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       setShowHighFiveModal(false);
     }, 2000);
 
-    if (!latestSession) return;
-    console.log("Dashboard: Inserting activity:", latestSession);
+    if (!latestSession || !user) return;
+
+    // Get the current (derived) multiplier for this exercise before logging it in activity
+    const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
 
     const newActivity = {
       id: crypto.randomUUID(),
@@ -148,49 +152,31 @@ const Dashboard: React.FC<DashboardProps> = ({
       exercise_id: latestSession.exercise.id,
       exercise_name: latestSession.exercise.name,
       reps: latestSession.reps,
-      multiplier: latestSession.multiplier,
+      multiplier: currentMultiplier, // Store the multiplier *at the time of this activity*
       dice_roll: latestSession.diceRoll,
     };
-
-    setHistory((prevHistory) => [newActivity, ...prevHistory]);
 
     const { error } = await supabase.from("activities").insert(newActivity);
     if (error) {
       console.error("Dashboard: Error inserting activity:", error);
-      setHistory((prevHistory) => prevHistory.slice(1));
+      setHistory((prevHistory) => prevHistory.slice(1)); // Revert locally if insert fails
+    } else {
+      await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
     }
 
-    setMultipliers((prev) => ({
-      ...prev,
-      [latestSession.exercise.id]: (prev[latestSession.exercise.id] || 1) + 1,
-    }));
-
     setCurrentWorkoutComplete(true);
-
     setTimerComplete(false);
     onStartTimer();
-
     setLatestSession(null);
   }, [
     latestSession,
     user,
-    setHistory,
-    setMultipliers,
+    multipliers,
+    fetchHistory,
     setCurrentWorkoutComplete,
     setTimerComplete,
     onStartTimer,
   ]);
-
-  const resetMultipliers = useCallback(() => {
-    setMultipliers({
-      1: 1,
-      2: 1,
-      3: 1,
-      4: 1,
-      5: 1,
-      6: 1,
-    });
-  }, []);
 
   const fetchLastSessionStart = useCallback(async () => {
     if (!user) return;
@@ -209,8 +195,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [user, fetchLastSessionStart]);
 
   const resetAll = useCallback(async () => {
-    console.log("Dashboard: Resetting all session state");
-    setMultipliers({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 });
+    console.log("Dashboard: Resetting all game state.");
+
     setLatestSession(null);
     setCurrentWorkoutComplete(false);
     setTimerComplete(false);
@@ -222,32 +208,29 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!error) {
       await fetchLastSessionStart();
       await fetchHistory();
+    } else {
+      console.error("Dashboard: Error updating last_session_start:", error);
     }
   }, [
     user,
     fetchLastSessionStart,
     fetchHistory,
-    setMultipliers,
     setLatestSession,
     setCurrentWorkoutComplete,
     setTimerComplete,
   ]);
 
-  // If the last session date is strictly before today's date, trigger a reset
+  // useEffect for auto-reset on date change using setInterval
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-
     const checkAndReset = () => {
       if (user && lastSessionStart) {
         const today = new Date();
-
         const lastSessionDate = new Date(
           lastSessionStart.getFullYear(),
           lastSessionStart.getMonth(),
           lastSessionStart.getDate()
         );
         const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
         if (lastSessionDate.getTime() < todayDate.getTime()) {
           console.log("Dashboard: Date has changed since last session. Auto-resetting game.");
           resetAll();
@@ -257,33 +240,33 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     checkAndReset();
 
-    intervalId = setInterval(checkAndReset, 60000);
-
+    const intervalId = setInterval(checkAndReset, 60000);
     return () => {
       clearInterval(intervalId);
     };
   }, [user, lastSessionStart, resetAll]);
 
+  // Helper functions for Stats Panel (use history & lastSessionStart from DB)
   const getTotalSetsToday = useCallback(() => {
     if (!lastSessionStart) return 0;
-    return history.filter((session) => new Date(session.timestamp) > lastSessionStart).length;
+    return history.filter((activity) => new Date(activity.timestamp) > lastSessionStart).length;
   }, [lastSessionStart, history]);
 
   const getTotalRepsToday = useCallback(() => {
     if (!lastSessionStart) return 0;
     return history
-      .filter((session) => new Date(session.timestamp) > lastSessionStart)
-      .reduce((total, session) => total + session.reps, 0);
+      .filter((activity) => new Date(activity.timestamp) > lastSessionStart)
+      .reduce((total, activity) => total + activity.reps, 0);
   }, [lastSessionStart, history]);
 
   const getRepsPerExerciseToday = useCallback(() => {
     if (!lastSessionStart) return {};
     const repsByExercise: Record<number, number> = {};
     history
-      .filter((session) => new Date(session.timestamp) > lastSessionStart)
-      .forEach((session) => {
-        repsByExercise[session.exercise_id] =
-          (repsByExercise[session.exercise_id] || 0) + session.reps;
+      .filter((activity) => new Date(activity.timestamp) > lastSessionStart)
+      .forEach((activity) => {
+        repsByExercise[activity.exercise_id] =
+          (repsByExercise[activity.exercise_id] || 0) + activity.reps;
       });
     return repsByExercise;
   }, [lastSessionStart, history]);
@@ -295,11 +278,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleConfirmReset = useCallback(() => {
     if (showConfirmModal.type === "game") {
       resetAll();
-    } else if (showConfirmModal.type === "multipliers") {
-      resetMultipliers();
     }
     setShowConfirmModal({ show: false, type: null });
-  }, [showConfirmModal.type, resetAll, resetMultipliers]);
+  }, [showConfirmModal.type, resetAll]);
 
   const handleCancelReset = useCallback(() => {
     setShowConfirmModal({ show: false, type: null });
@@ -311,19 +292,26 @@ const Dashboard: React.FC<DashboardProps> = ({
     setLatestSession(session);
   }, []);
 
-  const sessionHistory = lastSessionStart
-    ? history.filter((session) => new Date(session.timestamp) > lastSessionStart)
-    : [];
+  const sessionHistory = useMemo(() => {
+    // Memoize for performance
+    return lastSessionStart
+      ? history.filter((activity) => new Date(activity.timestamp) > lastSessionStart)
+      : [];
+  }, [lastSessionStart, history]);
 
   const updateNotificationsEnabled = useCallback(
     async (enabled: boolean) => {
       setNotificationsEnabled(enabled);
       if (user) {
-        setUserProfile((prev) => (prev ? { ...prev, notifications_enabled: enabled } : null));
-        await supabase
+        const { error } = await supabase
           .from("profiles")
           .update({ notifications_enabled: enabled })
           .eq("id", user.id);
+        if (error) {
+          console.error("Dashboard: Error updating notifications_enabled:", error);
+        } else {
+          setUserProfile((prev) => (prev ? { ...prev, notifications_enabled: enabled } : null));
+        }
       }
     },
     [user, setUserProfile]
@@ -332,7 +320,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const updateTimerDuration = useCallback(
     async (newDuration: number) => {
       console.log("Dashboard: updateTimerDuration received newDuration:", newDuration);
-
       onResetTimerToDuration(newDuration); // Call context to set timeLeft and stop worker
 
       if (user) {
@@ -340,15 +327,14 @@ const Dashboard: React.FC<DashboardProps> = ({
           .from("profiles")
           .update({ timer_duration: newDuration })
           .eq("id", user.id);
-
-        if (!error) {
-          console.log("Dashboard: DB update successful for timer_duration to:", newDuration);
+        if (error) {
+          console.error("Dashboard: Error updating timer_duration in DB:", error);
+        } else {
           const { data: updatedProfileFromDb, error: fetchError } = await supabase
             .from("profiles")
             .select("*")
             .eq("id", user.id)
             .single();
-
           if (updatedProfileFromDb && !fetchError) {
             const confirmedProfile = {
               ...updatedProfileFromDb,
@@ -363,9 +349,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             console.error("Dashboard: Error re-fetching profile after update:", fetchError);
             setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
           }
-        } else {
-          console.error("Dashboard: Error updating timer_duration in DB:", error);
-          setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
         }
       }
     },
@@ -428,11 +411,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                   onClick={() => handleResetClick("game")}
                   className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                   Reset Game
-                </button>
-                <button
-                  onClick={() => handleResetClick("multipliers")}
-                  className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
-                  Reset Multipliers
                 </button>
               </div>
             </div>
