@@ -1,5 +1,7 @@
-import React, { useState } from "react";
-import { X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Activity, Link, Unlink } from "lucide-react";
+import { OuraService, OuraStatus } from "../utils/ouraService";
+import { supabase } from "../utils/supabaseClient";
 
 interface SettingsPanelProps {
   timerDuration: number;
@@ -17,6 +19,78 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose,
 }) => {
   const [timerValue, setTimerValue] = useState<number>(timerDuration);
+  const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+      if (user) {
+        checkOuraStatus(user.id);
+      }
+    };
+    getCurrentUser();
+  }, []);
+
+  const checkOuraStatus = async (userId: string) => {
+    try {
+      const status = await OuraService.getStatus(userId);
+      setOuraStatus(status);
+    } catch (error) {
+      console.error("Error checking Oura status:", error);
+    }
+  };
+
+  const handleConnectOura = async () => {
+    if (!currentUser) return;
+
+    setIsConnecting(true);
+    try {
+      const authUrl = await OuraService.getAuthUrl(currentUser.id);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Error connecting to Oura:", error);
+      alert("Failed to connect to Oura. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnectOura = async () => {
+    if (!currentUser) return;
+
+    setIsDisconnecting(true);
+    try {
+      await OuraService.disconnect(currentUser.id);
+      setOuraStatus({ connected: false, hasValidToken: false });
+    } catch (error) {
+      console.error("Error disconnecting from Oura:", error);
+      alert("Failed to disconnect from Oura. Please try again.");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const handleSyncOura = async () => {
+    if (!currentUser) return;
+
+    setIsSyncing(true);
+    try {
+      await OuraService.syncActivity(currentUser.id, 7);
+      alert("Oura data synced successfully!");
+    } catch (error) {
+      console.error("Error syncing Oura data:", error);
+      alert("Failed to sync Oura data. Please try again.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSave = () => {
     updateTimerDuration(timerValue);
@@ -90,6 +164,97 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-13">
             Receive notifications when your timer is complete
           </p>
+        </div>
+
+        {/* Oura Ring Integration Section */}
+        <div className="border-t pt-6">
+          <div className="flex items-center mb-4">
+            <Activity className="w-5 h-5 mr-2 text-purple-500" />
+            <h3 className="text-lg font-medium">Oura Ring Integration</h3>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Connection Status</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {ouraStatus?.connected
+                    ? ouraStatus.hasValidToken
+                      ? "Connected and active"
+                      : "Connected but token expired"
+                    : "Not connected"}
+                </p>
+              </div>
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  ouraStatus?.connected && ouraStatus?.hasValidToken
+                    ? "bg-green-500"
+                    : ouraStatus?.connected
+                    ? "bg-yellow-500"
+                    : "bg-gray-400"
+                }`}
+              />
+            </div>
+
+            {ouraStatus?.connected ? (
+              <div className="space-y-2">
+                <button
+                  onClick={handleSyncOura}
+                  disabled={isSyncing}
+                  className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                  {isSyncing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <Link className="w-4 h-4 mr-2" />
+                      Sync Activity Data
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleDisconnectOura}
+                  disabled={isDisconnecting}
+                  className="w-full px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                  {isDisconnecting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-2"></div>
+                      Disconnecting...
+                    </>
+                  ) : (
+                    <>
+                      <Unlink className="w-4 h-4 mr-2" />
+                      Disconnect Oura
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleConnectOura}
+                disabled={isConnecting}
+                className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                {isConnecting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Link className="w-4 h-4 mr-2" />
+                    Connect Oura Ring
+                  </>
+                )}
+              </button>
+            )}
+
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Connect your Oura Ring to automatically sync your daily step count and compete with
+              friends on total steps!
+            </p>
+          </div>
         </div>
       </div>
 

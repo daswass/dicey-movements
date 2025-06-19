@@ -6,6 +6,7 @@ import Dashboard from "./components/Dashboard";
 import { FriendActivity } from "./components/FriendActivity";
 import { Friends } from "./components/Friends";
 import TimerHeader from "./components/TimerHeader";
+import OuraCallback from "./components/OuraCallback";
 import { AppSettings } from "./types";
 import { supabase } from "./utils/supabaseClient";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
@@ -428,6 +429,7 @@ function App() {
             />
             <Route path="/friends" element={<Friends />} />
             <Route path="/activity" element={<FriendActivity />} />
+            <Route path="/oura/callback" element={<OuraCallback />} />
           </Routes>
         ) : (
           <div className="p-4 text-center text-gray-500">

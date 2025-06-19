@@ -32,7 +32,7 @@ interface Activity {
   } | null;
 }
 
-type ScoreType = "totalReps" | "totalSets";
+type ScoreType = "totalReps" | "totalSets" | "totalSteps";
 
 export const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -43,92 +43,191 @@ export const Leaderboard: React.FC = () => {
 
   const fetchLeaderboard = useCallback(async () => {
     try {
-      let query = supabase
-        .from("activities")
-        .select(
-          `
-          user_id,
-          reps,
-          multiplier,
-          timestamp,
-          profiles!activities_user_id_fkey (
-            username,
-            location
-          )
-        `
-        )
-        .order("timestamp", { ascending: false });
-
-      if (timeRange !== "all") {
-        const now = new Date();
-        let startDate = new Date();
-        switch (timeRange) {
-          case "day":
-            startDate.setDate(now.getDate() - 1);
-            break;
-          case "week":
-            startDate.setDate(now.getDate() - 7);
-            break;
-          case "month":
-            startDate.setMonth(now.getMonth() - 1);
-            break;
-        }
-        query = query.gte("timestamp", startDate.toISOString());
+      if (scoreType === "totalSteps") {
+        // Fetch Oura steps data
+        await fetchOuraStepsLeaderboard();
+      } else {
+        // Fetch regular activity data
+        await fetchActivityLeaderboard();
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const userScores = new Map<
-        string,
-        { totalReps: number; totalSets: number; location: string; username: string }
-      >();
-
-      (data as unknown as Activity[]).forEach((activity) => {
-        const userId = activity.user_id;
-        const currentScores = userScores.get(userId) || {
-          totalReps: 0,
-          totalSets: 0,
-          location: activity.profiles?.location?.city || "Unknown",
-          username: activity.profiles?.username || "Unknown User",
-        };
-        currentScores.totalReps += activity.reps;
-        currentScores.totalSets += 1;
-        userScores.set(userId, currentScores);
-      });
-
-      const previousScores = new Map(previousEntriesRef.current);
-
-      const newEntries: LeaderboardEntry[] = Array.from(userScores.entries())
-        .map(([userId, scores]) => {
-          const currentScore = scoreType === "totalReps" ? scores.totalReps : scores.totalSets;
-          const previousScore = previousScores.get(userId);
-          let scoreChange: "increase" | "decrease" | undefined;
-
-          if (previousScore !== undefined && currentScore !== previousScore) {
-            scoreChange = currentScore > previousScore ? "increase" : "decrease";
-          }
-
-          previousEntriesRef.current.set(userId, currentScore);
-
-          return {
-            id: userId,
-            user_id: userId,
-            username: scores.username,
-            score: currentScore,
-            location: scores.location,
-            timestamp: new Date().toISOString(),
-            scoreChange: scoreChange,
-          };
-        })
-        .sort((a, b) => b.score - a.score);
-
-      setEntries(newEntries);
     } catch (err) {
       console.error("Error fetching leaderboard:", err);
       setError("Failed to load leaderboard");
     }
   }, [scoreType, timeRange]);
+
+  const fetchActivityLeaderboard = async () => {
+    let query = supabase
+      .from("activities")
+      .select(
+        `
+        user_id,
+        reps,
+        multiplier,
+        timestamp,
+        profiles!activities_user_id_fkey (
+          username,
+          location
+        )
+      `
+      )
+      .order("timestamp", { ascending: false });
+
+    if (timeRange !== "all") {
+      const now = new Date();
+      let startDate = new Date();
+      switch (timeRange) {
+        case "day":
+          startDate.setDate(now.getDate() - 1);
+          break;
+        case "week":
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case "month":
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+      }
+      query = query.gte("timestamp", startDate.toISOString());
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const userScores = new Map<
+      string,
+      { totalReps: number; totalSets: number; location: string; username: string }
+    >();
+
+    (data as unknown as Activity[]).forEach((activity) => {
+      const userId = activity.user_id;
+      const currentScores = userScores.get(userId) || {
+        totalReps: 0,
+        totalSets: 0,
+        location: activity.profiles?.location?.city || "Unknown",
+        username: activity.profiles?.username || "Unknown User",
+      };
+      currentScores.totalReps += activity.reps;
+      currentScores.totalSets += 1;
+      userScores.set(userId, currentScores);
+    });
+
+    const previousScores = new Map(previousEntriesRef.current);
+
+    const newEntries: LeaderboardEntry[] = Array.from(userScores.entries())
+      .map(([userId, scores]) => {
+        const currentScore = scoreType === "totalReps" ? scores.totalReps : scores.totalSets;
+        const previousScore = previousScores.get(userId);
+        let scoreChange: "increase" | "decrease" | undefined;
+
+        if (previousScore !== undefined && currentScore !== previousScore) {
+          scoreChange = currentScore > previousScore ? "increase" : "decrease";
+        }
+
+        previousEntriesRef.current.set(userId, currentScore);
+
+        return {
+          id: userId,
+          user_id: userId,
+          username: scores.username,
+          score: currentScore,
+          location: scores.location,
+          timestamp: new Date().toISOString(),
+          scoreChange: scoreChange,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    setEntries(newEntries);
+  };
+
+  const fetchOuraStepsLeaderboard = async () => {
+    // Get all users with Oura integration
+    const { data: ouraUsers, error: ouraError } = await supabase
+      .from("oura_tokens")
+      .select("user_id");
+
+    if (ouraError) throw ouraError;
+
+    if (!ouraUsers || ouraUsers.length === 0) {
+      setEntries([]);
+      return;
+    }
+
+    // Calculate date range
+    const now = new Date();
+    let startDate = new Date();
+    switch (timeRange) {
+      case "day":
+        startDate.setDate(now.getDate() - 1);
+        break;
+      case "week":
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case "month":
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case "all":
+        startDate = new Date(0); // Beginning of time
+        break;
+    }
+
+    const startDateStr = startDate.toISOString().split("T")[0];
+    const endDateStr = now.toISOString().split("T")[0];
+
+    // Get user profiles for location and username
+    const userIds = ouraUsers.map((u) => u.user_id);
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, username, location")
+      .in("id", userIds);
+
+    if (profilesError) throw profilesError;
+
+    // Get Oura activities for the date range
+    const { data: ouraActivities, error: activitiesError } = await supabase
+      .from("oura_activities")
+      .select("user_id, steps")
+      .in("user_id", userIds)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr);
+
+    if (activitiesError) throw activitiesError;
+
+    // Calculate total steps per user
+    const userSteps = new Map<string, number>();
+    ouraActivities?.forEach((activity) => {
+      const currentSteps = userSteps.get(activity.user_id) || 0;
+      userSteps.set(activity.user_id, currentSteps + activity.steps);
+    });
+
+    const previousScores = new Map(previousEntriesRef.current);
+
+    const newEntries: LeaderboardEntry[] = Array.from(userSteps.entries())
+      .map(([userId, totalSteps]) => {
+        const profile = profiles?.find((p) => p.id === userId);
+        const previousScore = previousScores.get(userId);
+        let scoreChange: "increase" | "decrease" | undefined;
+
+        if (previousScore !== undefined && totalSteps !== previousScore) {
+          scoreChange = totalSteps > previousScore ? "increase" : "decrease";
+        }
+
+        previousEntriesRef.current.set(userId, totalSteps);
+
+        return {
+          id: userId,
+          user_id: userId,
+          username: profile?.username || "Unknown User",
+          score: totalSteps,
+          location: profile?.location?.city || "Unknown",
+          timestamp: new Date().toISOString(),
+          scoreChange: scoreChange,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    setEntries(newEntries);
+  };
 
   useEffect(() => {
     fetchLeaderboard();
@@ -143,14 +242,47 @@ export const Leaderboard: React.FC = () => {
     const channel = supabase
       .channel("leaderboard_activities_channel")
       .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, (_) => {
-        fetchLeaderboardRef.current();
+        if (scoreType !== "totalSteps") {
+          fetchLeaderboardRef.current();
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "oura_activities" }, (_) => {
+        if (scoreType === "totalSteps") {
+          fetchLeaderboardRef.current();
+        }
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [scoreType]);
+
+  const getScoreLabel = (type: ScoreType) => {
+    switch (type) {
+      case "totalReps":
+        return "Total Reps";
+      case "totalSets":
+        return "Total Sets";
+      case "totalSteps":
+        return "Total Steps";
+      default:
+        return "Total Reps";
+    }
+  };
+
+  const getScoreUnit = (type: ScoreType) => {
+    switch (type) {
+      case "totalReps":
+        return "reps";
+      case "totalSets":
+        return "sets";
+      case "totalSteps":
+        return "steps";
+      default:
+        return "reps";
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
@@ -158,8 +290,8 @@ export const Leaderboard: React.FC = () => {
         <h2 className="text-2xl font-bold mb-2">Leaderboard</h2>
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center">
           <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
-            <div className="grid grid-cols-2">
-              {["totalReps", "totalSets"].map((type) => (
+            <div className="grid grid-cols-3">
+              {["totalReps", "totalSets", "totalSteps"].map((type) => (
                 <button
                   key={type}
                   onClick={() => setScoreType(type as ScoreType)}
@@ -169,7 +301,7 @@ export const Leaderboard: React.FC = () => {
                         ? "bg-blue-500 text-white"
                         : "bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
                     }`}>
-                  {type === "totalReps" ? "Total Reps" : "Total Sets"}
+                  {getScoreLabel(type as ScoreType)}
                 </button>
               ))}
             </div>
@@ -202,6 +334,15 @@ export const Leaderboard: React.FC = () => {
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
           {error}
+        </div>
+      )}
+
+      {scoreType === "totalSteps" && entries.length === 0 && !error && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 text-blue-700 rounded">
+          <p className="text-sm">
+            No Oura Ring data available. Connect your Oura Ring in Settings to see step-based
+            leaderboards!
+          </p>
         </div>
       )}
 
@@ -244,7 +385,7 @@ export const Leaderboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
+                  {entry.score.toLocaleString()} {getScoreUnit(scoreType)}
                 </div>
               </motion.div>
             ))}

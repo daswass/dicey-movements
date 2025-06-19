@@ -3,19 +3,35 @@ import cors from "cors";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
+import { OuraService } from "./ouraService";
 
 // Load environment variables
 dotenv.config();
 
+// Debug: Check if environment variables are loaded
+console.log("🔍 Main server environment check:");
+console.log("OURA_CLIENT_ID from process.env:", process.env.OURA_CLIENT_ID ? "SET" : "NOT SET");
+console.log("OURA_CLIENT_ID value:", process.env.OURA_CLIENT_ID);
+console.log("SUPABASE_URL from process.env:", process.env.SUPABASE_URL ? "SET" : "NOT SET");
+console.log("SUPABASE_URL value:", process.env.SUPABASE_URL);
+console.log(
+  "SUPABASE_ANON_KEY from process.env:",
+  process.env.SUPABASE_ANON_KEY ? "SET" : "NOT SET"
+);
+console.log(
+  "SUPABASE_SERVICE_ROLE_KEY from process.env:",
+  process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET" : "NOT SET"
+);
+
 // Initialize Express app
 const app = express();
 
-// Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+// Initialize Supabase client with fallbacks for testing
+const supabaseUrl = process.env.SUPABASE_URL || "https://placeholder.supabase.co";
+const supabaseKey = process.env.SUPABASE_ANON_KEY || "placeholder-key";
 
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase configuration");
+  console.warn("Warning: Missing Supabase configuration. Some features may not work properly.");
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -35,7 +51,95 @@ app.use(limiter);
 
 // Routes
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", message: "Backend server is running!" });
+});
+
+// Oura Integration Routes
+app.get("/api/oura/auth-url", async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
+    const authUrl = OuraService.getAuthorizationUrl(state);
+
+    res.json({ authUrl });
+  } catch (error) {
+    console.error("Error generating auth URL:", error);
+    res.status(500).json({ error: "Failed to generate authorization URL" });
+  }
+});
+
+app.get("/api/oura/callback", async (req, res) => {
+  try {
+    const { code, state } = req.query;
+
+    if (!code || !state) {
+      return res.status(400).json({ error: "Missing code or state parameter" });
+    }
+
+    // Decode state to get userId
+    const stateData = JSON.parse(Buffer.from(state as string, "base64").toString());
+    const { userId } = stateData;
+
+    // Exchange code for tokens
+    const tokenData = await OuraService.exchangeCodeForToken(code as string);
+
+    // Save tokens to database
+    await OuraService.saveTokens(userId, tokenData);
+
+    // Initial sync of activity data
+    await OuraService.syncUserActivity(userId, 7);
+
+    res.json({ success: true, message: "Oura integration successful!" });
+  } catch (error) {
+    console.error("Error in Oura callback:", error);
+    res.status(500).json({ error: "Failed to complete Oura integration" });
+  }
+});
+
+app.get("/api/oura/status/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const tokens = await OuraService.getTokens(userId);
+
+    res.json({
+      connected: !!tokens,
+      hasValidToken: tokens ? !OuraService.isTokenExpired(tokens.expires_at) : false,
+    });
+  } catch (error) {
+    console.error("Error checking Oura status:", error);
+    res.status(500).json({ error: "Failed to check Oura status" });
+  }
+});
+
+app.post("/api/oura/sync/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { days = 7 } = req.body;
+
+    await OuraService.syncUserActivity(userId, days);
+
+    res.json({ success: true, message: "Activity data synced successfully" });
+  } catch (error) {
+    console.error("Error syncing Oura activity:", error);
+    res.status(500).json({ error: "Failed to sync activity data" });
+  }
+});
+
+app.delete("/api/oura/disconnect/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    await OuraService.disconnectUser(userId);
+
+    res.json({ success: true, message: "Oura integration disconnected" });
+  } catch (error) {
+    console.error("Error disconnecting Oura:", error);
+    res.status(500).json({ error: "Failed to disconnect Oura integration" });
+  }
 });
 
 // Leaderboard routes
@@ -93,5 +197,7 @@ app.get("/api/friends/activity/:userId", async (req, res) => {
 // Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Backend server running on port ${PORT}`);
+  console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🔗 Oura endpoints available at http://localhost:${PORT}/api/oura/*`);
 });
