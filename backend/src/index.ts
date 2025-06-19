@@ -96,7 +96,11 @@ app.get("/api/oura/callback", async (req, res) => {
     res.json({ success: true, message: "Oura integration successful!" });
   } catch (error) {
     console.error("Error in Oura callback:", error);
-    res.status(500).json({ error: "Failed to complete Oura integration" });
+    // Return the actual error message
+    res.status(500).json({
+      error: "Failed to complete Oura integration",
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 

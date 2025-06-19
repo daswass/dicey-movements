@@ -14,7 +14,7 @@ This guide will help you set up Oura Ring integration for your Dicey Movements a
 2. Create a new application
 3. Configure the following settings:
    - **Application Name**: Dicey Movements
-   - **Redirect URI**: `http://localhost:3000/oura/callback` (for development)
+   - **Redirect URI**: `http://localhost:3000/api/oura/callback` (for development)
    - **Scopes**: Select `daily` and `heartrate` scopes
 4. Note down your **Client ID** and **Client Secret**
 
@@ -31,7 +31,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 # Oura API Configuration
 OURA_CLIENT_ID=your_oura_client_id_here
 OURA_CLIENT_SECRET=your_oura_client_secret_here
-OURA_REDIRECT_URI=http://localhost:3000/oura/callback
+OURA_REDIRECT_URI=http://localhost:3000/api/oura/callback
 
 # Server Configuration
 PORT=3001

@@ -58,15 +58,39 @@ export class OuraService {
 
   // Exchange authorization code for access token
   static async exchangeCodeForToken(code: string): Promise<OuraTokenResponse> {
-    const response = await axios.post("https://api.ouraring.com/oauth/token", {
-      grant_type: "authorization_code",
-      code: code,
-      client_id: OURA_CLIENT_ID,
-      client_secret: OURA_CLIENT_SECRET,
-      redirect_uri: OURA_REDIRECT_URI,
-    });
+    try {
+      const params = new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code,
+        client_id: OURA_CLIENT_ID,
+        client_secret: OURA_CLIENT_SECRET,
+        redirect_uri: OURA_REDIRECT_URI,
+      });
 
-    return response.data;
+      console.log("🔄 Exchanging code for token with params:", {
+        grant_type: "authorization_code",
+        code: "***REDACTED***",
+        client_id: OURA_CLIENT_ID,
+        redirect_uri: OURA_REDIRECT_URI,
+      });
+
+      const response = await axios.post("https://api.ouraring.com/oauth/token", params.toString(), {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        console.error("Oura API Error:", {
+          status: error.response.status,
+          data: error.response.data,
+        });
+        throw new Error(`Oura API Error: ${JSON.stringify(error.response.data)}`);
+      }
+      throw error;
+    }
   }
 
   // Refresh access token
