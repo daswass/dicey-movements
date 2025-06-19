@@ -1,6 +1,6 @@
 import { Session } from "@supabase/supabase-js";
 import { Settings } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { getExerciseById } from "../data/exercises";
 import { AppSettings, ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
@@ -29,7 +29,7 @@ interface DashboardProps {
   timeLeft: number;
   isTimerActive: boolean;
   userProfile: UserProfile | null;
-  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>; // Receive setUserProfile
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
 }
 
 interface Activity {
@@ -58,8 +58,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   onResetTimerToDuration,
   timeLeft,
   isTimerActive,
-  userProfile, // From App.tsx
-  setUserProfile, // From App.tsx
+  userProfile,
+  setUserProfile,
 }) => {
   const [multipliers, setMultipliers] = useState<ExerciseMultipliers>(() => {
     return (
@@ -83,7 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     show: boolean;
     type: "game" | "multipliers" | null;
   }>({ show: false, type: null });
-  const [user, setUser] = useState<any>(null); // Keep this for user.id logic etc.
+  const [user, setUser] = useState<any>(null);
   const [currentExercise, setCurrentExercise] = useState<any | null>(null);
   const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
@@ -233,6 +233,37 @@ const Dashboard: React.FC<DashboardProps> = ({
     setTimerComplete,
   ]);
 
+  // If the last session date is strictly before today's date, trigger a reset
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const checkAndReset = () => {
+      if (user && lastSessionStart) {
+        const today = new Date();
+
+        const lastSessionDate = new Date(
+          lastSessionStart.getFullYear(),
+          lastSessionStart.getMonth(),
+          lastSessionStart.getDate()
+        );
+        const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        if (lastSessionDate.getTime() < todayDate.getTime()) {
+          console.log("Dashboard: Date has changed since last session. Auto-resetting game.");
+          resetAll();
+        }
+      }
+    };
+
+    checkAndReset();
+
+    intervalId = setInterval(checkAndReset, 60000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [user, lastSessionStart, resetAll]);
+
   const getTotalSetsToday = useCallback(() => {
     if (!lastSessionStart) return 0;
     return history.filter((session) => new Date(session.timestamp) > lastSessionStart).length;
@@ -288,8 +319,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     async (enabled: boolean) => {
       setNotificationsEnabled(enabled);
       if (user) {
-        // Use the setUserProfile prop from App.tsx to update its state
-        // This will update the userProfile in App.tsx with the new notifications_enabled
         setUserProfile((prev) => (prev ? { ...prev, notifications_enabled: enabled } : null));
         await supabase
           .from("profiles")
@@ -314,7 +343,6 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         if (!error) {
           console.log("Dashboard: DB update successful for timer_duration to:", newDuration);
-          // Step 1: Immediately re-read the userProfile from the database
           const { data: updatedProfileFromDb, error: fetchError } = await supabase
             .from("profiles")
             .select("*")
@@ -322,7 +350,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             .single();
 
           if (updatedProfileFromDb && !fetchError) {
-            // Step 2: Use the *confirmed* data from the database to update App.tsx's userProfile state
             const confirmedProfile = {
               ...updatedProfileFromDb,
               timer_duration: updatedProfileFromDb.timer_duration || 300,
@@ -334,18 +361,16 @@ const Dashboard: React.FC<DashboardProps> = ({
             );
           } else {
             console.error("Dashboard: Error re-fetching profile after update:", fetchError);
-            // Fallback if re-fetch fails: update locally with newDuration (less reliable but prevents being stuck)
             setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
           }
         } else {
           console.error("Dashboard: Error updating timer_duration in DB:", error);
-          // Fallback if DB update fails: update locally with newDuration
           setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
         }
       }
     },
     [user, onResetTimerToDuration, setUserProfile]
-  ); // Depend on setUserProfile
+  );
 
   if (!user) {
     return null;
@@ -438,7 +463,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 return (
                   <div
                     key={exerciseId}
-                    className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
+                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
                     <span
                       className="truncate text-gray-800 dark:text-gray-200"
                       title={exercise.name}>
