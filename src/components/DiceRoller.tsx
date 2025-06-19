@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { getExerciseById } from "../data/exercises";
-import { DiceRoll, WorkoutSession, ExerciseMultipliers } from "../types";
+import { DiceRoll, ExerciseMultipliers, WorkoutSession } from "../types";
+import Dice from "./Dice"; // 1. Import the Dice component
 
 interface DiceRollerProps {
   onRollComplete: (session: WorkoutSession) => void;
@@ -14,7 +15,6 @@ const DiceRoller: React.FC<DiceRollerProps> = ({ onRollComplete, multipliers, ro
 
   const rollDice = () => {
     setIsRolling(true);
-
     const animationDuration = 1500;
     const frames = 15;
     const interval = animationDuration / frames;
@@ -29,33 +29,21 @@ const DiceRoller: React.FC<DiceRollerProps> = ({ onRollComplete, multipliers, ro
       frame++;
       if (frame >= frames) {
         clearInterval(rollInterval);
-
         const finalExerciseDie = Math.floor(Math.random() * 6) + 1;
         const finalRepsDie = Math.floor(Math.random() * 6) + 1;
-
-        setDiceValues({
-          exerciseDie: finalExerciseDie,
-          repsDie: finalRepsDie,
-        });
-
+        setDiceValues({ exerciseDie: finalExerciseDie, repsDie: finalRepsDie });
         setIsRolling(false);
-
         const exercise = getExerciseById(finalExerciseDie);
         const exerciseMultiplier = multipliers[finalExerciseDie];
         const totalReps = finalRepsDie * exerciseMultiplier;
-
         const session: WorkoutSession = {
           id: crypto.randomUUID(),
           timestamp: Date.now(),
-          diceRoll: {
-            exerciseDie: finalExerciseDie,
-            repsDie: finalRepsDie,
-          },
+          diceRoll: { exerciseDie: finalExerciseDie, repsDie: finalRepsDie },
           exercise,
           reps: totalReps,
           multiplier: exerciseMultiplier,
         };
-
         onRollComplete(session);
       }
     }, interval);
@@ -65,23 +53,25 @@ const DiceRoller: React.FC<DiceRollerProps> = ({ onRollComplete, multipliers, ro
     <div className="flex flex-col items-center">
       <div className="flex justify-center space-x-8 mb-8">
         <div className="flex flex-col items-center">
-          <div
-            className={`w-24 h-24 rounded-lg flex items-center justify-center text-4xl bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold shadow-lg mb-2 ${
+          {/* 2. Replace the text number with the Dice component */}
+          <Dice
+            value={diceValues?.exerciseDie}
+            className={`w-24 h-24 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg mb-2 ${
               isRolling ? "animate-bounce" : ""
-            }`}>
-            {diceValues?.exerciseDie || "?"}
-          </div>
+            }`}
+          />
           <span className="text-sm text-gray-500 dark:text-gray-400">Exercise</span>
         </div>
 
         <div className="flex flex-col items-center">
-          <div
-            className={`w-24 h-24 rounded-lg flex items-center justify-center text-4xl bg-gradient-to-br from-red-500 to-red-600 text-white font-bold shadow-lg mb-2 ${
+          {/* 3. Do the same for the Reps die */}
+          <Dice
+            value={diceValues?.repsDie}
+            className={`w-24 h-24 rounded-lg bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg mb-2 ${
               isRolling ? "animate-bounce" : ""
             }`}
-            style={{ animationDelay: "0.1s" }}>
-            {diceValues?.repsDie || "?"}
-          </div>
+            style={{ animationDelay: "0.1s" }}
+          />
           <span className="text-sm text-gray-500 dark:text-gray-400">Reps</span>
         </div>
       </div>

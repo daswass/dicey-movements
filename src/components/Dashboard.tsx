@@ -442,17 +442,25 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     key={exerciseId}
                     className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
+                    {/* Exercise Name (stays on the left) */}
                     <span
                       className="truncate text-gray-800 dark:text-gray-200"
                       title={exercise.name}>
                       {exercise.name}
                     </span>
-                    <span className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      Reps: {repsToday}
-                    </span>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                      {multiplier}x
-                    </span>
+
+                    {/* NEW: A flex container for the stats on the right */}
+                    <div className="flex items-baseline gap-x-4">
+                      <span className="w-20 text-right text-sm text-gray-600 dark:text-gray-300">
+                        Reps:{" "}
+                        <b>
+                          <i>{repsToday}</i>
+                        </b>
+                      </span>
+                      <span className="w-8 text-right font-semibold text-blue-600 dark:text-blue-400">
+                        {multiplier}x
+                      </span>
+                    </div>
                   </div>
                 );
               })}
