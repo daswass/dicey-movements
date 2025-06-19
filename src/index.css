@@ -20,3 +20,29 @@
   /* For Sign Out button in desktop view */
   @apply px-3 py-2 rounded-md text-sm font-medium bg-gray-700 text-gray-200 hover:bg-gray-600 transition-colors;
 }
+
+@keyframes green-flash {
+  0% {
+    background-color: rgba(74, 222, 128, 0.5);
+  } /* Corresponds to Tailwind's green-400 */
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes red-flash {
+  0% {
+    background-color: rgba(248, 113, 113, 0.5);
+  } /* Corresponds to Tailwind's red-400 */
+  100% {
+    background-color: transparent;
+  }
+}
+
+.flash-green {
+  animation: green-flash 1s ease-out;
+}
+
+.flash-red {
+  animation: red-flash 1s ease-out;
+}

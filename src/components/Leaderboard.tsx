@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react"; // Added useRef
+import { AnimatePresence, motion } from "framer-motion"; // Correct, modern import
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
+
+// --- Helper function to get a CSS class for the flash animation ---
+const getFlashClass = (change?: "increase" | "decrease") => {
+  if (change === "increase") return "flash-green";
+  if (change === "decrease") return "flash-red";
+  return "";
+};
 
 interface LeaderboardEntry {
   id: string;
@@ -8,6 +16,7 @@ interface LeaderboardEntry {
   score: number;
   location: string;
   timestamp: string;
+  scoreChange?: "increase" | "decrease";
 }
 
 interface Activity {
@@ -30,8 +39,8 @@ export const Leaderboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>("totalReps");
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("week");
+  const previousEntriesRef = useRef<Map<string, number>>(new Map());
 
-  // Memoize fetchLeaderboard. This function will recreate only when scoreType or timeRange changes.
   const fetchLeaderboard = useCallback(async () => {
     try {
       let query = supabase
@@ -68,7 +77,6 @@ export const Leaderboard: React.FC = () => {
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
 
       const userScores = new Map<
@@ -84,58 +92,62 @@ export const Leaderboard: React.FC = () => {
           location: activity.profiles?.location?.city || "Unknown",
           username: activity.profiles?.username || "Unknown User",
         };
-
         currentScores.totalReps += activity.reps;
         currentScores.totalSets += 1;
-
         userScores.set(userId, currentScores);
       });
 
-      const formattedEntries = Array.from(userScores.entries())
-        .map(([userId, scores]) => ({
-          id: userId,
-          user_id: userId,
-          username: scores.username,
-          score: scoreType === "totalReps" ? scores.totalReps : scores.totalSets,
-          location: scores.location,
-          timestamp: new Date().toISOString(),
-        }))
+      const previousScores = new Map(previousEntriesRef.current);
+
+      const newEntries: LeaderboardEntry[] = Array.from(userScores.entries())
+        .map(([userId, scores]) => {
+          const currentScore = scoreType === "totalReps" ? scores.totalReps : scores.totalSets;
+          const previousScore = previousScores.get(userId);
+          let scoreChange: "increase" | "decrease" | undefined;
+
+          if (previousScore !== undefined && currentScore !== previousScore) {
+            scoreChange = currentScore > previousScore ? "increase" : "decrease";
+          }
+
+          previousEntriesRef.current.set(userId, currentScore);
+
+          return {
+            id: userId,
+            user_id: userId,
+            username: scores.username,
+            score: currentScore,
+            location: scores.location,
+            timestamp: new Date().toISOString(),
+            scoreChange: scoreChange,
+          };
+        })
         .sort((a, b) => b.score - a.score);
 
-      setEntries(formattedEntries);
+      setEntries(newEntries);
     } catch (err) {
       console.error("Error fetching leaderboard:", err);
       setError("Failed to load leaderboard");
     }
-  }, [scoreType, timeRange]); // Dependencies for useCallback: fetchLeaderboard re-creates when filters change
+  }, [scoreType, timeRange]);
 
-  // Initial fetch of leaderboard data on component mount and when filters change
   useEffect(() => {
     fetchLeaderboard();
-  }, [fetchLeaderboard]); // Dependency for useEffect: re-run when memoized fetchLeaderboard changes
+  }, [fetchLeaderboard]);
 
-  // --- CRITICAL: Use a ref for fetchLeaderboard and an empty dependency array for the subscription useEffect ---
   const fetchLeaderboardRef = useRef(fetchLeaderboard);
   useEffect(() => {
     fetchLeaderboardRef.current = fetchLeaderboard;
-  }, [fetchLeaderboard]); // This useEffect ensures fetchLeaderboardRef.current is always up-to-date
+  }, [fetchLeaderboard]);
 
-  // Real-time subscription for responsive updates (runs ONCE on mount)
   useEffect(() => {
-    console.log(
-      "Leaderboard: Setting up Supabase Realtime subscription for 'activities' table changes."
-    );
-
     const channel = supabase
       .channel("leaderboard_activities_channel")
       .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, (_) => {
-        console.log("Leaderboard: Realtime change received. Triggering re-fetch.");
         fetchLeaderboardRef.current();
       })
       .subscribe();
 
     return () => {
-      console.log("Leaderboard: Unsubscribing from Supabase Realtime channel.");
       supabase.removeChannel(channel);
     };
   }, []);
@@ -199,33 +211,44 @@ export const Leaderboard: React.FC = () => {
             No leaderboard entries to show.
           </p>
         ) : (
-          entries.map((entry, index) => (
-            <div
-              key={entry.id}
-              className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-              <div className="flex items-center space-x-4">
-                <div
-                  className={`w-8 h-8 flex items-center justify-center text-white rounded-full font-bold text-sm ${
-                    index === 0
-                      ? "bg-yellow-500"
-                      : index === 1
-                      ? "bg-gray-400"
-                      : index === 2
-                      ? "bg-amber-600"
-                      : "bg-blue-500"
-                  }`}>
-                  {index + 1}
+          <AnimatePresence>
+            {entries.map((entry, index) => (
+              <motion.div
+                key={entry.id}
+                layout
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+                className={`flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${getFlashClass(
+                  entry.scoreChange
+                )}`}>
+                <div className="flex items-center space-x-4">
+                  <div
+                    className={`w-8 h-8 flex items-center justify-center text-white rounded-full font-bold text-sm ${
+                      index === 0
+                        ? "bg-yellow-500"
+                        : index === 1
+                        ? "bg-gray-400"
+                        : index === 2
+                        ? "bg-amber-600"
+                        : "bg-blue-500"
+                    }`}>
+                    {index + 1}
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {entry.username}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium text-gray-900 dark:text-white">{entry.username}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
                 </div>
-              </div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                {entry.score.toLocaleString()} {scoreType === "totalReps" ? "reps" : "sets"}
-              </div>
-            </div>
-          ))
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </div>
