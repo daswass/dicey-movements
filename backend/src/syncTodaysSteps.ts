@@ -51,9 +51,9 @@ async function syncTodaysSteps() {
             user_id: user.user_id,
             date: activity.day,
             steps: activity.steps,
-            calories_active: activity.calories_active,
-            calories_total: activity.calories_total,
-            distance: activity.distance,
+            calories_active: activity.active_calories,
+            calories_total: activity.total_calories,
+            distance: activity.equivalent_walking_distance,
           },
           { onConflict: "user_id, date" }
         );

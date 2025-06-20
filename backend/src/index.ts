@@ -1,8 +1,8 @@
-import express from "express";
+import { createClient } from "@supabase/supabase-js";
 import cors from "cors";
 import dotenv from "dotenv";
+import express from "express";
 import rateLimit from "express-rate-limit";
-import { createClient } from "@supabase/supabase-js";
 import { OuraService } from "./ouraService";
 
 // Load environment variables
@@ -29,6 +29,8 @@ const app = express();
 // Initialize Supabase client with fallbacks for testing
 const supabaseUrl = process.env.SUPABASE_URL || "https://placeholder.supabase.co";
 const supabaseKey = process.env.SUPABASE_ANON_KEY || "placeholder-key";
+const ouraWebhookVerificationToken =
+  process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn("Warning: Missing Supabase configuration. Some features may not work properly.");
@@ -160,15 +162,14 @@ app.delete("/api/oura/disconnect/:userId", async (req, res) => {
 // Oura Webhook Endpoint
 // Handles the one-time verification GET request from Oura
 app.get("/api/oura/webhook", (req, res) => {
-  const verificationToken = req.query.verification_token;
-  if (verificationToken) {
-    console.log(
-      `Oura webhook verification request received. Responding with token: ${verificationToken}`
-    );
-    res.send(verificationToken as string);
+  const { verification_token, challenge } = req.query;
+
+  if (verification_token === ouraWebhookVerificationToken) {
+    console.log(`Oura webhook verification request received. Responding with challenge.`);
+    res.json({ challenge });
   } else {
-    console.warn("Received a GET request to webhook URL without a verification_token.");
-    res.status(400).send("Missing verification_token");
+    console.warn("Invalid verification token");
+    res.status(401).send("Invalid verification token");
   }
 });
 
@@ -180,27 +181,21 @@ app.post("/api/oura/webhook", (req, res) => {
   // Process the event asynchronously to avoid holding up the request.
   (async () => {
     try {
-      const events = req.body.events;
-      if (!events || !Array.isArray(events)) {
-        console.warn("Webhook received with invalid event format:", req.body);
-        return;
-      }
+      const { event_type, data_type, object_id, user_id } = req.body;
 
-      console.log(`Received ${events.length} events from Oura webhook.`);
+      console.log(
+        `Received ${data_type} ${event_type} event for user ${user_id} from Oura webhook.`
+      );
 
-      for (const event of events) {
-        if (event.type === "new_daily_activity" && event.oura_user_id && event.day) {
-          console.log(`Processing 'new_daily_activity' for oura_user_id: ${event.oura_user_id}`);
-
-          const internalUserId = await OuraService.getInternalUserId(event.oura_user_id);
-
-          if (internalUserId) {
-            await OuraService.syncUserActivityForDay(internalUserId, event.day);
-          } else {
-            console.warn(
-              `Webhook event for Oura user ${event.oura_user_id} couldn't be mapped to an internal user.`
-            );
-          }
+      if (user_id) {
+        const internalUserId = await OuraService.getInternalUserId(user_id);
+        if (internalUserId) {
+          const date = new Date().toISOString().split("T")[0];
+          await OuraService.syncUserActivityForDay(internalUserId, date);
+        } else {
+          console.warn(
+            `Webhook event for Oura user ${user_id} couldn't be mapped to an internal user.`
+          );
         }
       }
     } catch (error) {

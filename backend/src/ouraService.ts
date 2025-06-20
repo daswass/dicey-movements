@@ -18,6 +18,8 @@ const OURA_REDIRECT_URI =
   process.env.OURA_REDIRECT_URI || "http://localhost:3000/api/oura/callback";
 const OURA_API_BASE_URL = "https://api.ouraring.com/v2";
 const OURA_WEBHOOK_URL = process.env.OURA_WEBHOOK_URL || "http://localhost:3000/api/oura/webhook";
+const OURA_WEBHOOK_VERIFICATION_TOKEN =
+  process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
 
 // Debug logging
 console.log("🔍 Environment Variables Debug:");
@@ -37,11 +39,13 @@ interface OuraTokenResponse {
 
 interface OuraActivityData {
   data: Array<{
+    id: string;
     day: string;
     steps: number;
-    calories_active: number;
-    calories_total: number;
-    distance: number;
+    active_calories: number;
+    total_calories: number;
+    equivalent_walking_distance: number;
+    score: number;
   }>;
 }
 
@@ -258,9 +262,9 @@ export class OuraService {
           user_id: userId,
           date: activity.day,
           steps: activity.steps,
-          calories_active: activity.calories_active,
-          calories_total: activity.calories_total,
-          distance: activity.distance,
+          calories_active: activity.active_calories,
+          calories_total: activity.total_calories,
+          distance: activity.equivalent_walking_distance,
         });
 
         if (error) {
@@ -271,22 +275,6 @@ export class OuraService {
       console.error(`Failed to sync Oura activity for user ${userId}:`, error);
       throw error;
     }
-  }
-
-  // Get total steps for a user in a date range
-  static async getTotalSteps(userId: string, startDate: string, endDate: string): Promise<number> {
-    const { data, error } = await supabase
-      .from("oura_activities")
-      .select("steps")
-      .eq("user_id", userId)
-      .gte("date", startDate)
-      .lte("date", endDate);
-
-    if (error) {
-      throw new Error(`Failed to get total steps: ${error.message}`);
-    }
-
-    return data.reduce((total, activity) => total + activity.steps, 0);
   }
 
   // Disconnect Oura integration for a user
@@ -346,9 +334,9 @@ export class OuraService {
             user_id: internalUserId,
             date: activity.day,
             steps: activity.steps,
-            calories_active: activity.calories_active,
-            calories_total: activity.calories_total,
-            distance: activity.distance,
+            calories_active: activity.active_calories,
+            calories_total: activity.total_calories,
+            distance: activity.equivalent_walking_distance,
           },
           { onConflict: "user_id, date" }
         );
@@ -382,12 +370,11 @@ export class OuraService {
 
     for (const dataType of dataTypes) {
       try {
-        const verificationToken = randomBytes(24).toString("hex");
         const response = await axios.post(
           `${OURA_API_BASE_URL}/webhook/subscription`,
           {
             callback_url: `${OURA_WEBHOOK_URL}`,
-            verification_token: verificationToken,
+            verification_token: `${OURA_WEBHOOK_VERIFICATION_TOKEN}`,
             event_type: "create",
             data_type: dataType,
           },

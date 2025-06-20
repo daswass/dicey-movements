@@ -53,22 +53,6 @@ export class OuraService {
     }
   }
 
-  // Get total steps for leaderboard
-  static async getTotalSteps(userId: string, startDate: string, endDate: string): Promise<number> {
-    const { data, error } = await supabase
-      .from("oura_activities")
-      .select("steps")
-      .eq("user_id", userId)
-      .gte("date", startDate)
-      .lte("date", endDate);
-
-    if (error) {
-      throw new Error(`Failed to get total steps: ${error.message}`);
-    }
-
-    return data.reduce((total, activity) => total + activity.steps, 0);
-  }
-
   // Handle OAuth callback
   static async handleCallback(code: string, state: string): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/oura/callback?code=${code}&state=${state}`);
