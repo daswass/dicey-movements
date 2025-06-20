@@ -111,13 +111,48 @@ export class OuraService {
     startDate: string,
     endDate: string
   ): Promise<OuraActivityData> {
-    const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/daily_activity`, {
+    // If fetching for a single day, use the more specific single-document endpoint.
+    if (startDate === endDate) {
+      try {
+        const response = await axios.get(
+          `${OURA_API_BASE_URL}/usercollection/daily_activity/${startDate}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        // The single-doc endpoint returns one object. We wrap it in a `data` array
+        // to match the format of the multi-day endpoint, so the rest of our code works seamlessly.
+        return { data: response.data ? [response.data] : [] };
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          // A 404 here likely means no data has been recorded for this day yet.
+          // We can treat this as a success with no data.
+          return { data: [] };
+        }
+        // For other errors, we should still throw them.
+        throw error;
+      }
+    } else {
+      // For date ranges, use the multi-document endpoint.
+      const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/daily_activity`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          start_date: startDate,
+          end_date: endDate,
+        },
+      });
+
+      return response.data;
+    }
+  }
+
+  // Get user's personal info from Oura API (includes Oura user ID)
+  static async getPersonalInfo(accessToken: string): Promise<{ id: string }> {
+    const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/personal_info`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-      },
-      params: {
-        start_date: startDate,
-        end_date: endDate,
       },
     });
 
@@ -125,7 +160,12 @@ export class OuraService {
   }
 
   // Save Oura tokens to database
-  static async saveTokens(userId: string, tokenData: OuraTokenResponse): Promise<void> {
+  static async saveTokens(
+    userId: string,
+    tokenData: OuraTokenResponse,
+    ouraUserId: string,
+    subscriptionId: string
+  ): Promise<void> {
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + tokenData.expires_in);
 
@@ -135,6 +175,8 @@ export class OuraService {
       refresh_token: tokenData.refresh_token,
       token_type: tokenData.token_type,
       expires_at: expiresAt.toISOString(),
+      oura_user_id: ouraUserId,
+      webhook_subscription_id: subscriptionId,
     });
 
     if (error) {
@@ -147,10 +189,12 @@ export class OuraService {
     access_token: string;
     refresh_token: string;
     expires_at: string;
+    oura_user_id: string;
+    webhook_subscription_id: string | null;
   } | null> {
     const { data, error } = await supabase
       .from("oura_tokens")
-      .select("access_token, refresh_token, expires_at")
+      .select("access_token, refresh_token, expires_at, oura_user_id, webhook_subscription_id")
       .eq("user_id", userId)
       .single();
 
@@ -179,7 +223,13 @@ export class OuraService {
     if (this.isTokenExpired(tokens.expires_at)) {
       // Token is expired, refresh it
       const newTokens = await this.refreshToken(tokens.refresh_token);
-      await this.saveTokens(userId, newTokens);
+      // Persist the existing oura_user_id and subscription_id during token refresh
+      await this.saveTokens(
+        userId,
+        newTokens,
+        tokens.oura_user_id,
+        tokens.webhook_subscription_id || "" // Pass empty string if null
+      );
       return newTokens.access_token;
     }
 
@@ -237,10 +287,107 @@ export class OuraService {
 
   // Disconnect Oura integration for a user
   static async disconnectUser(userId: string): Promise<void> {
+    const tokens = await this.getTokens(userId);
+    if (tokens && tokens.webhook_subscription_id) {
+      try {
+        // It's best practice to try and unsubscribe from the webhook when the user disconnects.
+        await this.deleteWebhookSubscription(tokens.access_token, tokens.webhook_subscription_id);
+        console.log(`Successfully deleted webhook subscription for user ${userId}`);
+      } catch (error) {
+        // We shouldn't block the user from disconnecting if the webhook deletion fails.
+        // This can happen if the token is already invalid.
+        console.error(
+          `Could not delete webhook subscription for user ${userId}. It may need to be cleaned up manually.`,
+          error
+        );
+      }
+    }
+
     const { error } = await supabase.from("oura_tokens").delete().eq("user_id", userId);
 
     if (error) {
       throw new Error(`Failed to disconnect Oura: ${error.message}`);
     }
+  }
+
+  // Find an internal user ID from an Oura user ID
+  static async getInternalUserId(ouraUserId: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("oura_tokens")
+      .select("user_id")
+      .eq("oura_user_id", ouraUserId)
+      .single();
+
+    if (error) {
+      // Log if it's not the "no rows" error, which is expected if no user is found.
+      if (error.code !== "PGRST116") {
+        console.error(`Error fetching internal user for Oura ID ${ouraUserId}:`, error);
+      }
+      return null;
+    }
+    return data?.user_id || null;
+  }
+
+  // Sync a single day of activity for a specific user, typically triggered by a webhook
+  static async syncUserActivityForDay(internalUserId: string, day: string): Promise<void> {
+    try {
+      console.log(`Webhook: Syncing data for user ${internalUserId} for day ${day}...`);
+      const accessToken = await this.getValidAccessToken(internalUserId);
+      const activityData = await this.getDailyActivity(accessToken, day, day);
+
+      if (activityData.data && activityData.data.length > 0) {
+        const activity = activityData.data[0];
+        const { error: upsertError } = await supabase.from("oura_activities").upsert(
+          {
+            user_id: internalUserId,
+            date: activity.day,
+            steps: activity.steps,
+            calories_active: activity.calories_active,
+            calories_total: activity.calories_total,
+            distance: activity.distance,
+          },
+          { onConflict: "user_id, date" }
+        );
+
+        if (upsertError) {
+          throw new Error(`Failed to upsert webhook activity data: ${upsertError.message}`);
+        }
+        console.log(`Webhook: Sync successful for user ${internalUserId} on ${activity.day}.`);
+      } else {
+        console.log(`Webhook: No new activity data found for user ${internalUserId} on ${day}.`);
+      }
+    } catch (error) {
+      console.error(`Webhook: Failed to sync data for user ${internalUserId}:`, error);
+      // We don't re-throw here to prevent a single user's failure from stopping a potential loop.
+    }
+  }
+
+  // Subscribe user to webhooks
+  static async subscribeToWebhooks(accessToken: string): Promise<any> {
+    const response = await axios.post(
+      `${OURA_API_BASE_URL}/webhook/subscription`,
+      {
+        callback_url: "https://dicey-movements-backend.onrender.com/api/oura/webhook",
+        events: ["new_daily_activity"],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+    return response.data;
+  }
+
+  // Delete webhook subscription for a user
+  static async deleteWebhookSubscription(
+    accessToken: string,
+    subscriptionId: string
+  ): Promise<void> {
+    await axios.delete(`${OURA_API_BASE_URL}/webhook/subscription/${subscriptionId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
   }
 }

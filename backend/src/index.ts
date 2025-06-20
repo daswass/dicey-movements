@@ -87,8 +87,16 @@ app.get("/api/oura/callback", async (req, res) => {
     // Exchange code for tokens
     const tokenData = await OuraService.exchangeCodeForToken(code as string);
 
-    // Save tokens to database
-    await OuraService.saveTokens(userId, tokenData);
+    // Get Oura user ID
+    const personalInfo = await OuraService.getPersonalInfo(tokenData.access_token);
+    const ouraUserId = personalInfo.id;
+
+    // Subscribe to webhooks for this user
+    const subscription = await OuraService.subscribeToWebhooks(tokenData.access_token);
+    const subscriptionId = subscription.id;
+
+    // Save tokens and subscription ID to database
+    await OuraService.saveTokens(userId, tokenData, ouraUserId, subscriptionId);
 
     // Initial sync of activity data
     await OuraService.syncUserActivity(userId, 7);
@@ -148,6 +156,58 @@ app.delete("/api/oura/disconnect/:userId", async (req, res) => {
     console.error("Error disconnecting Oura:", error);
     res.status(500).json({ error: "Failed to disconnect Oura integration" });
   }
+});
+
+// Oura Webhook Endpoint
+// Handles the one-time verification GET request from Oura
+app.get("/api/oura/webhook", (req, res) => {
+  const verificationToken = req.query.verification_token;
+  if (verificationToken) {
+    console.log(
+      `Oura webhook verification request received. Responding with token: ${verificationToken}`
+    );
+    res.send(verificationToken as string);
+  } else {
+    console.warn("Received a GET request to webhook URL without a verification_token.");
+    res.status(400).send("Missing verification_token");
+  }
+});
+
+// Handles incoming data events from Oura
+app.post("/api/oura/webhook", (req, res) => {
+  // Immediately respond to Oura with a 200 OK to acknowledge receipt.
+  res.status(200).send("Event received");
+
+  // Process the event asynchronously to avoid holding up the request.
+  (async () => {
+    try {
+      const events = req.body.events;
+      if (!events || !Array.isArray(events)) {
+        console.warn("Webhook received with invalid event format:", req.body);
+        return;
+      }
+
+      console.log(`Received ${events.length} events from Oura webhook.`);
+
+      for (const event of events) {
+        if (event.type === "new_daily_activity" && event.oura_user_id && event.day) {
+          console.log(`Processing 'new_daily_activity' for oura_user_id: ${event.oura_user_id}`);
+
+          const internalUserId = await OuraService.getInternalUserId(event.oura_user_id);
+
+          if (internalUserId) {
+            await OuraService.syncUserActivityForDay(internalUserId, event.day);
+          } else {
+            console.warn(
+              `Webhook event for Oura user ${event.oura_user_id} couldn't be mapped to an internal user.`
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error processing Oura webhook:", error);
+    }
+  })();
 });
 
 // Leaderboard routes
