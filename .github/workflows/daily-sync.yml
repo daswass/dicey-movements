@@ -1,0 +1,36 @@
+name: Daily Historical Oura Sync
+
+on:
+  schedule:
+    # Runs every day at 5 AM UTC
+    - cron: '0 5 * * *'
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run daily historical sync script
+        run: npx ts-node src/syncOuraData.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OURA_CLIENT_ID: ${{ secrets.OURA_CLIENT_ID }}
+          OURA_CLIENT_SECRET: ${{ secrets.OURA_CLIENT_SECRET }}
+          OURA_REDIRECT_URI: ${{ secrets.OURA_REDIRECT_URI }} 

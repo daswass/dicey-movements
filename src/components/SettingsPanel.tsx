@@ -20,6 +20,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const [timerValue, setTimerValue] = useState<number>(timerDuration);
   const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -30,13 +31,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   } | null>(null);
 
   useEffect(() => {
+    // Attempt to load status from localStorage for instant UI
+    const cachedStatus = localStorage.getItem("ouraConnectionStatus");
+    if (cachedStatus) {
+      try {
+        setOuraStatus(JSON.parse(cachedStatus));
+      } catch (e) {
+        console.error("Error parsing cached Oura status", e);
+      }
+    }
+
     const getCurrentUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setCurrentUser(user);
       if (user) {
-        checkOuraStatus(user.id);
+        await checkOuraStatus(user.id);
+      } else {
+        setIsCheckingStatus(false);
       }
     };
     getCurrentUser();
@@ -63,11 +76,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   const checkOuraStatus = async (userId: string) => {
+    setIsCheckingStatus(true);
     try {
       const status = await OuraService.getStatus(userId);
       setOuraStatus(status);
+      localStorage.setItem("ouraConnectionStatus", JSON.stringify(status));
     } catch (error) {
       console.error("Error checking Oura status:", error);
+      // It might be good to clear the cached status on error
+      localStorage.removeItem("ouraConnectionStatus");
+    } finally {
+      setIsCheckingStatus(false);
     }
   };
 
@@ -92,7 +111,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setIsDisconnecting(true);
     try {
       await OuraService.disconnect(currentUser.id);
-      setOuraStatus({ connected: false, hasValidToken: false });
+      const newStatus = { connected: false, hasValidToken: false };
+      setOuraStatus(newStatus);
+      localStorage.setItem("ouraConnectionStatus", JSON.stringify(newStatus));
     } catch (error) {
       console.error("Error disconnecting from Oura:", error);
       alert("Failed to disconnect from Oura. Please try again.");
@@ -241,7 +262,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="space-y-2">
                 <button
                   onClick={handleSyncOura}
-                  disabled={isSyncing}
+                  disabled={isSyncing || isCheckingStatus}
                   className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
                   {isSyncing ? (
                     <>
@@ -257,7 +278,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </button>
                 <button
                   onClick={handleDisconnectOura}
-                  disabled={isDisconnecting}
+                  disabled={isDisconnecting || isCheckingStatus}
                   className="w-full px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
                   {isDisconnecting ? (
                     <>
@@ -275,12 +296,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             ) : (
               <button
                 onClick={handleConnectOura}
-                disabled={isConnecting}
+                disabled={isConnecting || isCheckingStatus}
                 className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
-                {isConnecting ? (
+                {isConnecting || isCheckingStatus ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Connecting...
+                    {isCheckingStatus ? "Checking Status..." : "Connecting..."}
                   </>
                 ) : (
                   <>

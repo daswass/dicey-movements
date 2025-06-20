@@ -141,14 +141,14 @@ export const Leaderboard: React.FC = () => {
   };
 
   const fetchOuraStepsLeaderboard = async () => {
-    // Get all users with Oura integration
-    const { data: ouraUsers, error: ouraError } = await supabase
-      .from("oura_tokens")
-      .select("user_id");
+    // Get all users from profiles
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, username, location");
 
-    if (ouraError) throw ouraError;
+    if (profilesError) throw profilesError;
 
-    if (!ouraUsers || ouraUsers.length === 0) {
+    if (!profiles || profiles.length === 0) {
       setEntries([]);
       return;
     }
@@ -174,20 +174,10 @@ export const Leaderboard: React.FC = () => {
     const startDateStr = startDate.toISOString().split("T")[0];
     const endDateStr = now.toISOString().split("T")[0];
 
-    // Get user profiles for location and username
-    const userIds = ouraUsers.map((u) => u.user_id);
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, username, location")
-      .in("id", userIds);
-
-    if (profilesError) throw profilesError;
-
-    // Get Oura activities for the date range
+    // Get Oura activities for all users (will be empty for users without Oura)
     const { data: ouraActivities, error: activitiesError } = await supabase
       .from("oura_activities")
       .select("user_id, steps")
-      .in("user_id", userIds)
       .gte("date", startDateStr)
       .lte("date", endDateStr);
 
@@ -200,30 +190,31 @@ export const Leaderboard: React.FC = () => {
       userSteps.set(activity.user_id, currentSteps + activity.steps);
     });
 
+    // Create entries for all users, with 0 steps for those without Oura data
     const previousScores = new Map(previousEntriesRef.current);
-
-    const newEntries: LeaderboardEntry[] = Array.from(userSteps.entries())
-      .map(([userId, totalSteps]) => {
-        const profile = profiles?.find((p) => p.id === userId);
-        const previousScore = previousScores.get(userId);
+    const newEntries: LeaderboardEntry[] = profiles
+      .map((profile) => {
+        const steps = userSteps.get(profile.id) || 0;
+        const previousScore = previousScores.get(profile.id);
         let scoreChange: "increase" | "decrease" | undefined;
 
-        if (previousScore !== undefined && totalSteps !== previousScore) {
-          scoreChange = totalSteps > previousScore ? "increase" : "decrease";
+        if (previousScore !== undefined && steps !== previousScore) {
+          scoreChange = steps > previousScore ? "increase" : "decrease";
         }
 
-        previousEntriesRef.current.set(userId, totalSteps);
+        previousEntriesRef.current.set(profile.id, steps);
 
         return {
-          id: userId,
-          user_id: userId,
-          username: profile?.username || "Unknown User",
-          score: totalSteps,
-          location: profile?.location?.city || "Unknown",
+          id: profile.id,
+          user_id: profile.id,
+          username: profile.username,
+          score: steps,
+          location: profile.location?.city || "Unknown",
           timestamp: new Date().toISOString(),
           scoreChange: scoreChange,
         };
       })
+      .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score);
 
     setEntries(newEntries);
@@ -261,13 +252,13 @@ export const Leaderboard: React.FC = () => {
   const getScoreLabel = (type: ScoreType) => {
     switch (type) {
       case "totalReps":
-        return "Total Reps";
+        return "Reps";
       case "totalSets":
-        return "Total Sets";
+        return "Sets";
       case "totalSteps":
-        return "Total Steps";
+        return "Steps";
       default:
-        return "Total Reps";
+        return "Reps";
     }
   };
 
@@ -286,9 +277,9 @@ export const Leaderboard: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">Leaderboard</h2>
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center">
+      <div>
+        <h2 className="text-2xl font-bold mb-6">Leaderboard</h2>
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center mb-8">
           <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
             <div className="grid grid-cols-3">
               {["totalReps", "totalSets", "totalSteps"].map((type) => (
@@ -329,68 +320,61 @@ export const Leaderboard: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-          {error}
-        </div>
-      )}
-
-      {scoreType === "totalSteps" && entries.length === 0 && !error && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 text-blue-700 rounded">
-          <p className="text-sm">
-            No Oura Ring data available. Connect your Oura Ring in Settings to see step-based
-            leaderboards!
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {entries.length === 0 && !error ? (
-          <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-            No leaderboard entries to show.
-          </p>
-        ) : (
-          <AnimatePresence>
-            {entries.map((entry, index) => (
-              <motion.div
-                key={entry.id}
-                layout
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.4 }}
-                className={`flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${getFlashClass(
-                  entry.scoreChange
-                )}`}>
-                <div className="flex items-center space-x-4">
-                  <div
-                    className={`w-8 h-8 flex items-center justify-center text-white rounded-full font-bold text-sm ${
-                      index === 0
-                        ? "bg-yellow-500"
-                        : index === 1
-                        ? "bg-gray-400"
-                        : index === 2
-                        ? "bg-amber-600"
-                        : "bg-blue-500"
-                    }`}>
-                    {index + 1}
-                  </div>
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-white">
-                      {entry.username}
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{entry.location}</div>
-                  </div>
-                </div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {entry.score.toLocaleString()} {getScoreUnit(scoreType)}
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
         )}
+
+        <div className="space-y-4">
+          {entries.length === 0 && !error ? (
+            <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+              No leaderboard entries to show.
+            </p>
+          ) : (
+            <AnimatePresence>
+              {entries.map((entry, index) => (
+                <motion.div
+                  key={entry.id}
+                  layout
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className={`flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${getFlashClass(
+                    entry.scoreChange
+                  )}`}>
+                  <div className="flex items-center space-x-4">
+                    <div
+                      className={`w-8 h-8 flex items-center justify-center text-white rounded-full font-bold text-sm ${
+                        index === 0
+                          ? "bg-yellow-500"
+                          : index === 1
+                          ? "bg-gray-400"
+                          : index === 2
+                          ? "bg-amber-600"
+                          : "bg-blue-500"
+                      }`}>
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {entry.username}
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        {entry.location}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {entry.score.toLocaleString()} {getScoreUnit(scoreType)}
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
+        </div>
       </div>
     </div>
   );

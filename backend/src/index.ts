@@ -95,13 +95,13 @@ app.get("/api/oura/callback", async (req, res) => {
 
     // Redirect to frontend with success status
     const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
-    res.redirect(`${frontendUrl}/settings?oura=success`);
+    res.redirect(`${frontendUrl}?oura=success`);
   } catch (error) {
     console.error("Error in Oura callback:", error);
     // Redirect to frontend with error status
     const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
     res.redirect(
-      `${frontendUrl}/settings?oura=error&message=${encodeURIComponent(
+      `${frontendUrl}?oura=error&message=${encodeURIComponent(
         error instanceof Error ? error.message : String(error)
       )}`
     );
