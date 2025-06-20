@@ -359,9 +359,9 @@ export class OuraService {
     const dataTypes = [
       "daily_activity",
       "daily_readiness",
-      "daily_sleep",
-      "daily_spo2",
-      "sleep",
+      //"daily_sleep",
+      //"daily_spo2",
+      //"sleep",
       "workout",
     ];
     const subscriptionIds: string[] = [];
