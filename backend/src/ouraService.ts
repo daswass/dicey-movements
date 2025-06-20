@@ -1,5 +1,6 @@
-import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
+import axios from "axios";
+import { randomBytes } from "crypto";
 import dotenv from "dotenv";
 
 // Load environment variables first
@@ -13,14 +14,17 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // Oura API configuration with fallbacks for testing
 const OURA_CLIENT_ID = process.env.OURA_CLIENT_ID || "placeholder-client-id";
 const OURA_CLIENT_SECRET = process.env.OURA_CLIENT_SECRET || "placeholder-secret";
-const OURA_REDIRECT_URI = process.env.OURA_REDIRECT_URI || "http://localhost:3000/oura/callback";
+const OURA_REDIRECT_URI =
+  process.env.OURA_REDIRECT_URI || "http://localhost:3000/api/oura/callback";
 const OURA_API_BASE_URL = "https://api.ouraring.com/v2";
+const OURA_WEBHOOK_URL = process.env.OURA_WEBHOOK_URL || "http://localhost:3000/api/oura/webhook";
 
 // Debug logging
 console.log("🔍 Environment Variables Debug:");
 console.log("OURA_CLIENT_ID:", OURA_CLIENT_ID);
 console.log("OURA_CLIENT_SECRET:", OURA_CLIENT_SECRET ? "***SET***" : "NOT SET");
 console.log("OURA_REDIRECT_URI:", OURA_REDIRECT_URI);
+console.log("OURA_WEBHOOK_URL:", OURA_WEBHOOK_URL);
 console.log("SUPABASE_URL:", supabaseUrl);
 console.log("SUPABASE_KEY:", supabaseKey ? "***SET***" : "NOT SET");
 
@@ -164,7 +168,7 @@ export class OuraService {
     userId: string,
     tokenData: OuraTokenResponse,
     ouraUserId: string,
-    subscriptionId: string
+    subscriptionIds: string[]
   ): Promise<void> {
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + tokenData.expires_in);
@@ -176,7 +180,7 @@ export class OuraService {
       token_type: tokenData.token_type,
       expires_at: expiresAt.toISOString(),
       oura_user_id: ouraUserId,
-      webhook_subscription_id: subscriptionId,
+      webhook_subscriptions: subscriptionIds, // Store the subscription ID array
     });
 
     if (error) {
@@ -190,11 +194,11 @@ export class OuraService {
     refresh_token: string;
     expires_at: string;
     oura_user_id: string;
-    webhook_subscription_id: string | null;
+    webhook_subscriptions: string[] | null;
   } | null> {
     const { data, error } = await supabase
       .from("oura_tokens")
-      .select("access_token, refresh_token, expires_at, oura_user_id, webhook_subscription_id")
+      .select("access_token, refresh_token, expires_at, oura_user_id, webhook_subscriptions")
       .eq("user_id", userId)
       .single();
 
@@ -228,7 +232,7 @@ export class OuraService {
         userId,
         newTokens,
         tokens.oura_user_id,
-        tokens.webhook_subscription_id || "" // Pass empty string if null
+        tokens.webhook_subscriptions || [] // Pass empty array if null
       );
       return newTokens.access_token;
     }
@@ -288,16 +292,16 @@ export class OuraService {
   // Disconnect Oura integration for a user
   static async disconnectUser(userId: string): Promise<void> {
     const tokens = await this.getTokens(userId);
-    if (tokens && tokens.webhook_subscription_id) {
+    if (tokens && tokens.webhook_subscriptions && tokens.webhook_subscriptions.length > 0) {
       try {
-        // It's best practice to try and unsubscribe from the webhook when the user disconnects.
-        await this.deleteWebhookSubscription(tokens.access_token, tokens.webhook_subscription_id);
-        console.log(`Successfully deleted webhook subscription for user ${userId}`);
+        // It's best practice to try and unsubscribe from all webhooks when the user disconnects.
+        await this.deleteAllWebhookSubscriptions(tokens.access_token, tokens.webhook_subscriptions);
+        console.log(`Successfully deleted all webhook subscriptions for user ${userId}`);
       } catch (error) {
         // We shouldn't block the user from disconnecting if the webhook deletion fails.
         // This can happen if the token is already invalid.
         console.error(
-          `Could not delete webhook subscription for user ${userId}. It may need to be cleaned up manually.`,
+          `Could not delete all webhook subscriptions for user ${userId}. They may need to be cleaned up manually.`,
           error
         );
       }
@@ -362,32 +366,68 @@ export class OuraService {
     }
   }
 
-  // Subscribe user to webhooks
-  static async subscribeToWebhooks(accessToken: string): Promise<any> {
-    const response = await axios.post(
-      `${OURA_API_BASE_URL}/webhook/subscription`,
-      {
-        callback_url: "https://dicey-movements-backend.onrender.com/api/oura/webhook",
-        events: ["new_daily_activity"],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+  // Subscribe user to all relevant webhooks
+  static async subscribeToAllWebhooks(accessToken: string): Promise<string[]> {
+    const dataTypes = [
+      "daily_activity",
+      "daily_readiness",
+      "daily_sleep",
+      "daily_spo2",
+      "sleep",
+      "workout",
+    ];
+    const subscriptionIds: string[] = [];
+
+    console.log(`Subscribing user to ${dataTypes.length} data types...`);
+
+    for (const dataType of dataTypes) {
+      try {
+        const verificationToken = randomBytes(24).toString("hex");
+        const response = await axios.post(
+          `${OURA_API_BASE_URL}/webhook/subscription`,
+          {
+            callback_url: `${OURA_WEBHOOK_URL}`,
+            verification_token: verificationToken,
+            event_type: "create",
+            data_type: dataType,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "x-client-id": OURA_CLIENT_ID,
+              "x-client-secret": OURA_CLIENT_SECRET,
+            },
+          }
+        );
+        subscriptionIds.push(response.data.id);
+        console.log(`Successfully subscribed to ${dataType} (ID: ${response.data.id})`);
+      } catch (error) {
+        console.error(`Failed to subscribe to ${dataType}:`, error);
+        // We continue even if one subscription fails.
       }
-    );
-    return response.data;
+    }
+    return subscriptionIds;
   }
 
-  // Delete webhook subscription for a user
-  static async deleteWebhookSubscription(
+  // Delete all webhook subscriptions for a user
+  static async deleteAllWebhookSubscriptions(
     accessToken: string,
-    subscriptionId: string
+    subscriptionIds: string[]
   ): Promise<void> {
-    await axios.delete(`${OURA_API_BASE_URL}/webhook/subscription/${subscriptionId}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    console.log(`Deleting ${subscriptionIds.length} webhook subscriptions for user...`);
+    for (const subId of subscriptionIds) {
+      try {
+        await axios.delete(`${OURA_API_BASE_URL}/webhook/subscription/${subId}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "x-client-id": OURA_CLIENT_ID,
+            "x-client-secret": OURA_CLIENT_SECRET,
+          },
+        });
+        console.log(`Successfully deleted subscription ${subId}`);
+      } catch (error) {
+        console.error(`Failed to delete subscription ${subId}:`, error);
+      }
+    }
   }
 }
