@@ -42,7 +42,7 @@ async function syncTodaysSteps() {
   for (const user of users) {
     try {
       const accessToken = await OuraService.getValidAccessToken(user.user_id);
-      const activityData = await OuraService.getTodaysActivity(accessToken);
+      const activityData = await OuraService.getDailyActivity(accessToken, today, today);
 
       if (activityData.data && activityData.data.length > 0) {
         const activity = activityData.data[0];

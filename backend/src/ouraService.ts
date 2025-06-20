@@ -124,22 +124,6 @@ export class OuraService {
     return response.data;
   }
 
-  // Get today's activity data from Oura API
-  static async getTodaysActivity(accessToken: string): Promise<OuraActivityData> {
-    const today = new Date().toISOString().split("T")[0];
-    const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/activity`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      params: {
-        start_date: today,
-        end_date: today,
-      },
-    });
-
-    return response.data;
-  }
-
   // Save Oura tokens to database
   static async saveTokens(userId: string, tokenData: OuraTokenResponse): Promise<void> {
     const expiresAt = new Date();
