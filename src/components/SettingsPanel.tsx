@@ -23,7 +23,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [ouraMessage, setOuraMessage] = useState<{
     type: "success" | "error";
@@ -119,21 +118,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       alert("Failed to disconnect from Oura. Please try again.");
     } finally {
       setIsDisconnecting(false);
-    }
-  };
-
-  const handleSyncOura = async () => {
-    if (!currentUser) return;
-
-    setIsSyncing(true);
-    try {
-      await OuraService.syncActivity(currentUser.id, 7);
-      alert("Oura data synced successfully!");
-    } catch (error) {
-      console.error("Error syncing Oura data:", error);
-      alert("Failed to sync Oura data. Please try again.");
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -261,22 +245,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {ouraStatus?.connected ? (
               <div className="space-y-2">
                 <button
-                  onClick={handleSyncOura}
-                  disabled={isSyncing || isCheckingStatus}
-                  className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
-                  {isSyncing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <Link className="w-4 h-4 mr-2" />
-                      Sync Activity Data
-                    </>
-                  )}
-                </button>
-                <button
                   onClick={handleDisconnectOura}
                   disabled={isDisconnecting || isCheckingStatus}
                   className="w-full px-4 py-2 border border-red-300 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
@@ -313,8 +281,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
 
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Connect your Oura Ring to automatically sync your daily step count and compete with
-              friends on total steps!
+              Connect your Oura Ring to automatically sync your activity. Data syncs periodically
+              throughout the day.
             </p>
           </div>
         </div>
