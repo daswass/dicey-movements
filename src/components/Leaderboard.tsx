@@ -153,33 +153,34 @@ export const Leaderboard: React.FC = () => {
       return;
     }
 
-    // Calculate date range
-    const now = new Date();
-    let startDate = new Date();
-    switch (timeRange) {
-      case "day":
-        startDate.setDate(now.getDate() - 1);
-        break;
-      case "week":
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case "month":
-        startDate.setMonth(now.getMonth() - 1);
-        break;
-      case "all":
-        startDate = new Date(0); // Beginning of time
-        break;
+    let query = supabase.from("oura_activities").select("user_id, steps");
+
+    if (timeRange === "day") {
+      // For the "24h" view, we only want today's steps.
+      // The background job keeps this data fresh.
+      const todayStr = new Date().toISOString().split("T")[0];
+      query = query.eq("date", todayStr);
+    } else {
+      // For other views, calculate the date range
+      const now = new Date();
+      let startDate = new Date();
+      switch (timeRange) {
+        case "week":
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case "month":
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case "all":
+          startDate = new Date(0); // Beginning of time
+          break;
+      }
+      const startDateStr = startDate.toISOString().split("T")[0];
+      const endDateStr = now.toISOString().split("T")[0];
+      query = query.gte("date", startDateStr).lte("date", endDateStr);
     }
 
-    const startDateStr = startDate.toISOString().split("T")[0];
-    const endDateStr = now.toISOString().split("T")[0];
-
-    // Get Oura activities for all users (will be empty for users without Oura)
-    const { data: ouraActivities, error: activitiesError } = await supabase
-      .from("oura_activities")
-      .select("user_id, steps")
-      .gte("date", startDateStr)
-      .lte("date", endDateStr);
+    const { data: ouraActivities, error: activitiesError } = await query;
 
     if (activitiesError) throw activitiesError;
 

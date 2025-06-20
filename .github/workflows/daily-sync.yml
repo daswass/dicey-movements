@@ -24,7 +24,7 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --include=dev
 
       - name: Run daily historical sync script
         run: npx ts-node src/syncOuraData.ts

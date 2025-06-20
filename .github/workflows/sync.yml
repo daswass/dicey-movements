@@ -24,7 +24,7 @@ jobs:
           node-version: '18' # Or your preferred version
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --include=dev
 
       - name: Run sync script
         run: npx ts-node src/syncTodaysSteps.ts
