@@ -225,14 +225,17 @@ export class OuraService {
 
       // Save activity data to database
       for (const activity of activityData.data) {
-        const { error } = await supabase.from("oura_activities").upsert({
-          user_id: userId,
-          date: activity.day,
-          steps: activity.steps,
-          calories_active: activity.active_calories,
-          calories_total: activity.total_calories,
-          distance: activity.equivalent_walking_distance,
-        });
+        const { error } = await supabase.from("oura_activities").upsert(
+          {
+            user_id: userId,
+            date: activity.day,
+            steps: activity.steps,
+            calories_active: activity.active_calories,
+            calories_total: activity.total_calories,
+            distance: activity.equivalent_walking_distance,
+          },
+          { onConflict: "user_id, date" }
+        );
 
         if (error) {
           console.error(`Failed to save activity for ${activity.day}:`, error);
@@ -295,7 +298,9 @@ export class OuraService {
         if (upsertError) {
           throw new Error(`Failed to upsert webhook activity data: ${upsertError.message}`);
         }
-        console.log(`Webhook: Sync successful for user ${internalUserId} on ${activity.day}.`);
+        console.log(
+          `Webhook: Sync successful for user ${internalUserId} on ${activity.day}: ${activity}`
+        );
       } else {
         console.log(`Webhook: No new activity data found for user ${internalUserId} on ${day}.`);
       }
