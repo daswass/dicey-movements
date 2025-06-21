@@ -119,41 +119,17 @@ export class OuraService {
     startDate: string,
     endDate: string
   ): Promise<OuraActivityData> {
-    // If fetching for a single day, use the more specific single-document endpoint.
-    if (startDate === endDate) {
-      try {
-        const response = await axios.get(
-          `${OURA_API_BASE_URL}/usercollection/daily_activity/${startDate}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        // The single-doc endpoint returns one object. We wrap it in a `data` array
-        // to match the format of the multi-day endpoint, so the rest of our code works seamlessly.
-        return { data: response.data ? [response.data] : [] };
-      } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
-          // A 404 here likely means no data has been recorded for this day yet.
-          // We can treat this as a success with no data.
-          return { data: [] };
-        }
-        // For other errors, we should still throw them.
-        throw error;
-      }
-    } else {
-      // For date ranges, use the multi-document endpoint.
-      const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/daily_activity`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        params: {
-          start_date: startDate,
-          end_date: endDate,
-        },
-      });
+    const response = await axios.get(`${OURA_API_BASE_URL}/usercollection/daily_activity`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      params: {
+        start_date: startDate,
+        end_date: startDate === endDate ? undefined : endDate,
+      },
+    });
 
-      return response.data;
-    }
+    return response.data;
   }
 
   // Get user's personal info from Oura API (includes Oura user ID)
