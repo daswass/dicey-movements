@@ -93,11 +93,8 @@ app.get("/api/oura/callback", async (req, res) => {
     const personalInfo = await OuraService.getPersonalInfo(tokenData.access_token);
     const ouraUserId = personalInfo.id;
 
-    // Subscribe to all relevant webhooks for this user
-    const subscriptionIds = await OuraService.subscribeToAllWebhooks(tokenData.access_token);
-
-    // Save tokens and subscription IDs to database
-    await OuraService.saveTokens(userId, tokenData, ouraUserId, subscriptionIds);
+    // Save tokens to database
+    await OuraService.saveTokens(userId, tokenData, ouraUserId);
 
     // Initial sync of activity data
     await OuraService.syncUserActivity(userId, 7);

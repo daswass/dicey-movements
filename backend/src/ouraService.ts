@@ -171,48 +171,44 @@ export class OuraService {
   static async saveTokens(
     userId: string,
     tokenData: OuraTokenResponse,
-    ouraUserId: string,
-    subscriptionIds: string[]
+    ouraUserId: string
   ): Promise<void> {
-    const expiresAt = new Date();
-    expiresAt.setSeconds(expiresAt.getSeconds() + tokenData.expires_in);
-
-    const { error } = await supabase.from("oura_tokens").upsert({
-      user_id: userId,
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token,
-      token_type: tokenData.token_type,
-      expires_at: expiresAt.toISOString(),
-      oura_user_id: ouraUserId,
-      webhook_subscriptions: subscriptionIds, // Store the subscription ID array
-    });
+    const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
+    const { error } = await supabase.from("oura_tokens").upsert(
+      {
+        user_id: userId,
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: expiresAt,
+        oura_user_id: ouraUserId,
+      },
+      { onConflict: "user_id" }
+    );
 
     if (error) {
       throw new Error(`Failed to save Oura tokens: ${error.message}`);
     }
   }
 
-  // Get stored tokens for a user
+  // Get tokens for a user
   static async getTokens(userId: string): Promise<{
     access_token: string;
     refresh_token: string;
     expires_at: string;
     oura_user_id: string;
-    webhook_subscriptions: string[] | null;
   } | null> {
     const { data, error } = await supabase
       .from("oura_tokens")
-      .select("access_token, refresh_token, expires_at, oura_user_id, webhook_subscriptions")
+      .select("access_token, refresh_token, expires_at, oura_user_id")
       .eq("user_id", userId)
       .single();
 
     if (error) {
-      if (error.code === "PGRST116") {
-        return null; // No tokens found
+      if (error.code !== "PGRST116") {
+        console.error("Error fetching tokens:", error);
       }
-      throw new Error(`Failed to get Oura tokens: ${error.message}`);
+      return null;
     }
-
     return data;
   }
 
@@ -231,13 +227,8 @@ export class OuraService {
     if (this.isTokenExpired(tokens.expires_at)) {
       // Token is expired, refresh it
       const newTokens = await this.refreshToken(tokens.refresh_token);
-      // Persist the existing oura_user_id and subscription_id during token refresh
-      await this.saveTokens(
-        userId,
-        newTokens,
-        tokens.oura_user_id,
-        tokens.webhook_subscriptions || [] // Pass empty array if null
-      );
+      // Persist the existing oura_user_id during token refresh
+      await this.saveTokens(userId, newTokens, tokens.oura_user_id);
       return newTokens.access_token;
     }
 
@@ -279,22 +270,6 @@ export class OuraService {
 
   // Disconnect Oura integration for a user
   static async disconnectUser(userId: string): Promise<void> {
-    const tokens = await this.getTokens(userId);
-    if (tokens && tokens.webhook_subscriptions && tokens.webhook_subscriptions.length > 0) {
-      try {
-        // It's best practice to try and unsubscribe from all webhooks when the user disconnects.
-        await this.deleteAllWebhookSubscriptions(tokens.access_token, tokens.webhook_subscriptions);
-        console.log(`Successfully deleted all webhook subscriptions for user ${userId}`);
-      } catch (error) {
-        // We shouldn't block the user from disconnecting if the webhook deletion fails.
-        // This can happen if the token is already invalid.
-        console.error(
-          `Could not delete all webhook subscriptions for user ${userId}. They may need to be cleaned up manually.`,
-          error
-        );
-      }
-    }
-
     const { error } = await supabase.from("oura_tokens").delete().eq("user_id", userId);
 
     if (error) {
@@ -351,70 +326,6 @@ export class OuraService {
     } catch (error) {
       console.error(`Webhook: Failed to sync data for user ${internalUserId}:`, error);
       // We don't re-throw here to prevent a single user's failure from stopping a potential loop.
-    }
-  }
-
-  // Subscribe user to all relevant webhooks
-  static async subscribeToAllWebhooks(accessToken: string): Promise<string[]> {
-    const dataTypes = [
-      "daily_activity",
-      "daily_readiness",
-      //"daily_sleep",
-      //"daily_spo2",
-      //"sleep",
-      "workout",
-    ];
-    const subscriptionIds: string[] = [];
-
-    console.log(`Subscribing user to ${dataTypes.length} data types...`);
-
-    for (const dataType of dataTypes) {
-      try {
-        const response = await axios.post(
-          `${OURA_API_BASE_URL}/webhook/subscription`,
-          {
-            callback_url: `${OURA_WEBHOOK_URL}`,
-            verification_token: `${OURA_WEBHOOK_VERIFICATION_TOKEN}`,
-            event_type: "create",
-            data_type: dataType,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "x-client-id": OURA_CLIENT_ID,
-              "x-client-secret": OURA_CLIENT_SECRET,
-            },
-          }
-        );
-        subscriptionIds.push(response.data.id);
-        console.log(`Successfully subscribed to ${dataType} (ID: ${response.data.id})`);
-      } catch (error) {
-        console.error(`Failed to subscribe to ${dataType}:`, error);
-        // We continue even if one subscription fails.
-      }
-    }
-    return subscriptionIds;
-  }
-
-  // Delete all webhook subscriptions for a user
-  static async deleteAllWebhookSubscriptions(
-    accessToken: string,
-    subscriptionIds: string[]
-  ): Promise<void> {
-    console.log(`Deleting ${subscriptionIds.length} webhook subscriptions for user...`);
-    for (const subId of subscriptionIds) {
-      try {
-        await axios.delete(`${OURA_API_BASE_URL}/webhook/subscription/${subId}`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "x-client-id": OURA_CLIENT_ID,
-            "x-client-secret": OURA_CLIENT_SECRET,
-          },
-        });
-        console.log(`Successfully deleted subscription ${subId}`);
-      } catch (error) {
-        console.error(`Failed to delete subscription ${subId}:`, error);
-      }
     }
   }
 }

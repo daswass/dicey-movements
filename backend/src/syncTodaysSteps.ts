@@ -15,7 +15,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function syncTodaysSteps() {
-  console.log("Starting daily step sync for all users...");
+  console.log("Starting step sync for all users...");
 
   // 1. Get all users with valid oura_tokens
   const { data: users, error: usersError } = await supabase

@@ -8,7 +8,8 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "test": "jest",
-    "sync-oura": "ts-node src/syncOuraData.ts"
+    "sync-oura": "ts-node src/syncOuraData.ts",
+    "setup-webhooks": "ts-node src/setupWebhooks.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
