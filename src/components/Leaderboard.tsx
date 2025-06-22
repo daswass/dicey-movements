@@ -38,7 +38,7 @@ export const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>("totalReps");
-  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("week");
+  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("day");
   const previousEntriesRef = useRef<Map<string, number>>(new Map());
 
   const fetchLeaderboard = useCallback(async () => {

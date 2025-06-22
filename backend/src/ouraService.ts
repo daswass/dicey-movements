@@ -103,11 +103,17 @@ export class OuraService {
 
   // Refresh access token
   static async refreshToken(refreshToken: string): Promise<OuraTokenResponse> {
-    const response = await axios.post("https://api.ouraring.com/oauth/token", {
+    const params = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: OURA_CLIENT_ID,
       client_secret: OURA_CLIENT_SECRET,
+    });
+
+    const response = await axios.post("https://api.ouraring.com/oauth/token", params.toString(), {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     });
 
     return response.data;
