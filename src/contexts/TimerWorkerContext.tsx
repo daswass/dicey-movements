@@ -27,9 +27,11 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       workerRef.current.onmessage = (event) => {
         const { type, timeLeft: workerTimeLeft } = event.data;
 
+        /*
         console.log(
           `[Context Worker Message] Type: ${type}, Worker TimeLeft: ${workerTimeLeft}, Current Context TimeLeft: ${timeLeft}`
         );
+        */
 
         if (type === "TICK") {
           setTimeLeft(workerTimeLeft);

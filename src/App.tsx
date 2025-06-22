@@ -1,17 +1,17 @@
 import { Session } from "@supabase/supabase-js";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
 import { FriendActivity } from "./components/FriendActivity";
 import { Friends } from "./components/Friends";
-import TimerHeader from "./components/TimerHeader";
 import OuraCallback from "./components/OuraCallback";
-import { AppSettings } from "./types";
-import { supabase } from "./utils/supabaseClient";
+import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
-import { getUserLocation } from "./utils/socialService";
+import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
+import { getUserLocation } from "./utils/socialService";
+import { supabase } from "./utils/supabaseClient";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
@@ -24,6 +24,7 @@ function App() {
   const [dayOfWeek, setDayOfWeek] = useState<string>("");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu open/close
+  const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
 
   const {
     isTimerActive,
@@ -38,6 +39,13 @@ function App() {
   } = useTimerWorker();
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Preload the audio element
+  useEffect(() => {
+    audioRef.current = new Audio(TIMER_SOUND_PATH);
+    audioRef.current.preload = "auto";
+    audioRef.current.load();
+  }, []);
 
   const getDayOfWeek = () => {
     const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
@@ -120,10 +128,6 @@ function App() {
 
   useEffect(() => {
     if (userProfile) {
-      console.log(
-        `[App useEffect UserProfile.Duration] userProfile.timer_duration: ${userProfile.timer_duration}, timeLeft: ${timeLeft}, isActive: ${isTimerActive}`
-      );
-
       setSettings((prevSettings) => {
         const defaultAppSettings: AppSettings = {
           notificationsEnabled: userProfile.notifications_enabled ?? true,
@@ -146,21 +150,22 @@ function App() {
         (timeLeft === 0 || timeLeft !== userProfile.timer_duration) &&
         userProfile.timer_duration > 0
       ) {
-        console.log(
-          `[App useEffect InitTimeLeft] Updating timeLeft from ${timeLeft} to ${userProfile.timer_duration}. (IsActive: ${isTimerActive})`
-        );
         setTimeLeft(userProfile.timer_duration);
       }
     } else {
       if (timeLeft !== 0) {
-        console.log(
-          `[App useEffect UserProfile.Duration] Resetting timeLeft to 0 due to null userProfile.`
-        );
         setTimeLeft(0);
       }
       setSettings(null);
     }
-  }, [userProfile, isTimerActive, timeLeft, setTimeLeft]);
+  }, [
+    userProfile?.id,
+    userProfile?.timer_duration,
+    userProfile?.notifications_enabled,
+    isTimerActive,
+    timeLeft,
+    setTimeLeft,
+  ]);
 
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     console.log("App.tsx: Updating settings:", newSettings);
@@ -186,18 +191,28 @@ function App() {
     setIsTimerActive(true);
     setTimerComplete(false);
     setCurrentWorkoutComplete(false);
-  }, [userProfile, startWorkerTimer, setIsTimerActive]);
+  }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive]);
 
   const playSound = useCallback(() => {
     if (audioRef.current) {
-      audioRef.current
-        .play()
-        .catch((error) => console.error("App.tsx: Error playing sound:", error));
+      // Reset the audio to the beginning
+      audioRef.current.currentTime = 0;
+
+      // Play the audio
+      audioRef.current.play().catch((error) => {
+        console.error("App.tsx: Error playing sound:", error);
+        // If there's an error, try creating a new audio element
+        const newAudio = new Audio(TIMER_SOUND_PATH);
+        newAudio.play().catch((newError) => {
+          console.error("App.tsx: Error playing sound with new audio element:", newError);
+        });
+      });
     } else {
-      audioRef.current = new Audio(TIMER_SOUND_PATH);
-      audioRef.current
-        .play()
-        .catch((error) => console.error("App.tsx: Error playing sound (initial):", error));
+      // Fallback if audioRef is not available
+      const audio = new Audio(TIMER_SOUND_PATH);
+      audio.play().catch((error) => {
+        console.error("App.tsx: Error playing sound (fallback):", error);
+      });
     }
   }, []);
 
@@ -207,16 +222,104 @@ function App() {
       return;
     }
 
+    console.log("Current Notification.permission status:", Notification.permission);
+
     if (Notification.permission === "granted") {
-      new Notification(title, { body });
+      new Notification(title, {
+        body,
+        icon: "/favicon.svg", // Add an icon if you have one
+        requireInteraction: true, // Keep notification until user interacts
+        silent: false, // Allow system sound
+      });
     } else if (Notification.permission !== "denied") {
       Notification.requestPermission().then((permission) => {
         if (permission === "granted") {
-          new Notification(title, { body });
+          new Notification(title, {
+            body,
+            icon: "/favicon.svg",
+            requireInteraction: true,
+            silent: false,
+          });
         }
       });
     }
   }, []);
+
+  // Enhanced notification system with multiple attention-grabbing features
+  const notifyTimerExpired = useCallback(() => {
+    console.log("App.tsx: Timer expired - triggering enhanced notifications");
+
+    // 1. Play sound
+    playSound();
+
+    // 2. Show desktop notification if tab is hidden
+    if (document.hidden) {
+      showNotification("⏰ Timer Expired!", "Your workout timer has finished! Time to get moving!");
+    }
+
+    // 3. Start title flashing
+    setIsTitleFlashing(true);
+
+    // 4. Try to focus the window/tab (may not work due to browser security)
+    if (document.hidden) {
+      // This is the most we can do to get attention
+      window.focus();
+    }
+
+    // 5. Add visual feedback to the page
+    document.body.classList.add("timer-expired-flash");
+
+    // Stop the flashing after 10 seconds
+    setTimeout(() => {
+      setIsTitleFlashing(false);
+      document.body.classList.remove("timer-expired-flash");
+    }, 10000);
+  }, [playSound, showNotification]);
+
+  // Function to stop timer notifications
+  const stopTimerNotifications = useCallback(() => {
+    setIsTitleFlashing(false);
+    document.body.classList.remove("timer-expired-flash");
+  }, []);
+
+  // Stop notifications when user interacts with the page
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      if (isTitleFlashing) {
+        stopTimerNotifications();
+      }
+    };
+
+    // Listen for various user interactions
+    document.addEventListener("click", handleUserInteraction);
+    document.addEventListener("keydown", handleUserInteraction);
+    document.addEventListener("touchstart", handleUserInteraction);
+    document.addEventListener("scroll", handleUserInteraction);
+
+    return () => {
+      document.removeEventListener("click", handleUserInteraction);
+      document.removeEventListener("keydown", handleUserInteraction);
+      document.removeEventListener("touchstart", handleUserInteraction);
+      document.removeEventListener("scroll", handleUserInteraction);
+    };
+  }, [isTitleFlashing, stopTimerNotifications]);
+
+  // Handle title flashing
+  useEffect(() => {
+    if (isTitleFlashing) {
+      const interval = setInterval(() => {
+        document.title =
+          document.title === "⏰ TIMER EXPIRED! ⏰" ? "Dicey Movements" : "⏰ TIMER EXPIRED! ⏰";
+      }, 1000);
+
+      return () => {
+        clearInterval(interval);
+        document.title = "Dicey Movements"; // Reset title when component unmounts
+      };
+    } else {
+      document.title = "Dicey Movements";
+    }
+  }, [isTitleFlashing]);
 
   useEffect(() => {
     if (timeLeft === 0 && isTimerActive) {
@@ -229,14 +332,9 @@ function App() {
   useEffect(() => {
     if (timerComplete) {
       console.log("App.tsx: Timer has completed! Playing sound and checking for notification.");
-      playSound();
-
-      if (document.hidden) {
-        console.log("App.tsx: Tab is hidden, sending notification.");
-        showNotification("Timer Expired!", "Your workout timer has finished.");
-      }
+      notifyTimerExpired();
     }
-  }, [timerComplete, playSound, showNotification]);
+  }, [timerComplete, notifyTimerExpired]);
 
   if (!session) {
     return <Auth />;
@@ -408,20 +506,13 @@ function App() {
               path="/"
               element={
                 <Dashboard
-                  session={session}
-                  settings={settings}
-                  updateSettings={updateSettings}
+                  key={userProfile?.id || "loading"}
                   timerComplete={timerComplete}
                   setTimerComplete={setTimerComplete}
                   currentWorkoutComplete={currentWorkoutComplete}
                   setCurrentWorkoutComplete={setCurrentWorkoutComplete}
                   onStartTimer={handleStartTimer}
-                  onPauseTimer={pauseWorkerTimer}
-                  onResumeTimer={resumeWorkerTimer}
-                  onStopTimer={stopWorkerTimer}
                   onResetTimerToDuration={resetTimerWorkerToDuration}
-                  timeLeft={timeLeft}
-                  isTimerActive={isTimerActive}
                   userProfile={userProfile}
                   setUserProfile={setUserProfile}
                 />

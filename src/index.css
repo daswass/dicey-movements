@@ -39,12 +39,29 @@
   }
 }
 
+@keyframes timer-expired-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  25% {
+    background-color: rgba(239, 68, 68, 0.3); /* red-500 with opacity */
+  }
+  75% {
+    background-color: rgba(239, 68, 68, 0.3); /* red-500 with opacity */
+  }
+}
+
 .flash-green {
   animation: green-flash 1s ease-out;
 }
 
 .flash-red {
   animation: red-flash 1s ease-out;
+}
+
+.timer-expired-flash {
+  animation: timer-expired-flash 2s ease-in-out infinite;
 }
 
 /* Custom Scrollbar for WebKit Browsers (Chrome, Safari, Edge) */

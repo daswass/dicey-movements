@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { getExerciseById } from "../data/exercises";
 import { DiceRoll, ExerciseMultipliers, WorkoutSession } from "../types";
 import Dice from "./Dice"; // 1. Import the Dice component
@@ -7,11 +7,23 @@ interface DiceRollerProps {
   onRollComplete: (session: WorkoutSession) => void;
   multipliers: ExerciseMultipliers;
   rollCompleted: boolean;
+  session?: WorkoutSession | null;
 }
 
-const DiceRoller: React.FC<DiceRollerProps> = ({ onRollComplete, multipliers, rollCompleted }) => {
+const DiceRoller: React.FC<DiceRollerProps> = ({
+  onRollComplete,
+  multipliers,
+  rollCompleted,
+  session,
+}) => {
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [diceValues, setDiceValues] = useState<DiceRoll | null>(null);
+
+  useEffect(() => {
+    if (session?.diceRoll) {
+      setDiceValues(session.diceRoll);
+    }
+  }, [session]);
 
   const rollDice = () => {
     setIsRolling(true);
