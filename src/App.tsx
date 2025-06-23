@@ -10,7 +10,7 @@ import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
-import { getUserLocation } from "./utils/socialService";
+import { getUserLocation, updateUserLocation } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
@@ -115,8 +115,21 @@ function App() {
         console.error("App.tsx: Error fetching user profile:", error);
         setUserProfile(null);
       } else if (data) {
-        setUserProfile({ ...data, timer_duration: data.timer_duration || 300 });
-        //console.log(`App.tsx: Fetched and set userProfile: ${JSON.stringify(data)}`);
+        // Update location on every login
+        try {
+          const updatedProfile = await updateUserLocation();
+          setUserProfile({
+            ...updatedProfile,
+            timer_duration: updatedProfile.timer_duration || 300,
+          });
+          console.log(
+            `App.tsx: Updated location and set userProfile: ${JSON.stringify(updatedProfile)}`
+          );
+        } catch (locationError) {
+          console.error("App.tsx: Error updating location:", locationError);
+          // Still set the profile even if location update fails
+          setUserProfile({ ...data, timer_duration: data.timer_duration || 300 });
+        }
       }
     } catch (e) {
       console.error("App.tsx: Exception fetching/creating profile:", e);

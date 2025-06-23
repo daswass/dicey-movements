@@ -12,6 +12,8 @@ CREATE TABLE profiles (
     username TEXT,
     location JSONB NOT NULL,
     stats JSONB NOT NULL DEFAULT '{"totalReps": 0, "totalSets": 0, "streak": 0, "achievements": []}',
+    timer_duration INTEGER DEFAULT 1000,
+    notifications_enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -49,6 +51,16 @@ CREATE TABLE friends (
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(user_id, friend_id)
+);
+
+-- Create friend_activities table
+CREATE TABLE friend_activities (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES profiles(id) NOT NULL,
+    username TEXT NOT NULL,
+    activity_type TEXT NOT NULL,
+    details TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- Enable RLS on all tables
@@ -160,7 +172,7 @@ CREATE TRIGGER update_profiles_updated_at
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO profiles (id, first_name, last_name, location)
+    INSERT INTO profiles (id, first_name, last_name, location, timer_duration, notifications_enabled)
     VALUES (
         NEW.id,
         COALESCE(NEW.raw_user_meta_data->>'first_name', 'User'),
@@ -169,7 +181,9 @@ BEGIN
             'city', COALESCE(NEW.raw_user_meta_data->>'location', 'Unknown'),
             'country', 'Unknown',
             'coordinates', jsonb_build_object('latitude', 0, 'longitude', 0)
-        )
+        ),
+        300,
+        true
     );
     RETURN NEW;
 END;

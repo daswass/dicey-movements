@@ -9,6 +9,47 @@ const getFlashClass = (change?: "increase" | "decrease") => {
   return "";
 };
 
+// --- Helper functions for localStorage ---
+const getStoredScoreType = (): ScoreType => {
+  try {
+    const stored = localStorage.getItem("leaderboard_score_type");
+    if (stored && ["totalReps", "totalSets", "totalSteps"].includes(stored)) {
+      return stored as ScoreType;
+    }
+  } catch (error) {
+    console.warn("Failed to read score type from localStorage:", error);
+  }
+  return "totalReps";
+};
+
+const getStoredTimeRange = (): "day" | "week" | "month" | "all" => {
+  try {
+    const stored = localStorage.getItem("leaderboard_time_range");
+    if (stored && ["day", "week", "month", "all"].includes(stored)) {
+      return stored as "day" | "week" | "month" | "all";
+    }
+  } catch (error) {
+    console.warn("Failed to read time range from localStorage:", error);
+  }
+  return "day";
+};
+
+const setStoredScoreType = (scoreType: ScoreType) => {
+  try {
+    localStorage.setItem("leaderboard_score_type", scoreType);
+  } catch (error) {
+    console.warn("Failed to save score type to localStorage:", error);
+  }
+};
+
+const setStoredTimeRange = (timeRange: "day" | "week" | "month" | "all") => {
+  try {
+    localStorage.setItem("leaderboard_time_range", timeRange);
+  } catch (error) {
+    console.warn("Failed to save time range to localStorage:", error);
+  }
+};
+
 interface LeaderboardEntry {
   id: string;
   user_id: string;
@@ -37,9 +78,19 @@ type ScoreType = "totalReps" | "totalSets" | "totalSteps";
 export const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [scoreType, setScoreType] = useState<ScoreType>("totalReps");
-  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("day");
+  const [scoreType, setScoreType] = useState<ScoreType>(getStoredScoreType);
+  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">(getStoredTimeRange);
   const previousEntriesRef = useRef<Map<string, number>>(new Map());
+
+  // Update localStorage when scoreType changes
+  useEffect(() => {
+    setStoredScoreType(scoreType);
+  }, [scoreType]);
+
+  // Update localStorage when timeRange changes
+  useEffect(() => {
+    setStoredTimeRange(timeRange);
+  }, [timeRange]);
 
   const fetchLeaderboard = useCallback(async () => {
     try {

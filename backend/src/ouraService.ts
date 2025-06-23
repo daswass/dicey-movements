@@ -305,7 +305,9 @@ export class OuraService {
           throw new Error(`Failed to upsert webhook activity data: ${upsertError.message}`);
         }
         console.log(
-          `Webhook: Sync successful for user ${internalUserId} on ${activity.day}: ${activity}`
+          `Webhook: Sync successful for user ${internalUserId} on ${activity.day}: ${JSON.stringify(
+            activity
+          )}`
         );
       } else {
         console.log(`Webhook: No new activity data found for user ${internalUserId} on ${day}.`);

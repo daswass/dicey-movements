@@ -8,31 +8,73 @@ export const getUserLocation = async (): Promise<{
 }> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error("Geolocation is not supported by your browser"));
+      // Provide fallback location if geolocation is not supported
+      resolve({
+        city: "Unknown City",
+        country: "Unknown Country",
+        coordinates: { latitude: 0, longitude: 0 },
+      });
       return;
     }
 
+    const timeoutId = setTimeout(() => {
+      // Timeout fallback after 10 seconds
+      resolve({
+        city: "Unknown City",
+        country: "Unknown Country",
+        coordinates: { latitude: 0, longitude: 0 },
+      });
+    }, 10000);
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        clearTimeout(timeoutId);
         try {
           const { latitude, longitude } = position.coords;
           // Use reverse geocoding to get city and country
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&timeout=5000`
           );
+
+          if (!response.ok) {
+            throw new Error(`Geocoding failed: ${response.status}`);
+          }
+
           const data = await response.json();
 
           resolve({
-            city: data.address.city || data.address.town || "Unknown City",
-            country: data.address.country || "Unknown Country",
+            city:
+              data.address?.city || data.address?.town || data.address?.village || "Unknown City",
+            country: data.address?.country || "Unknown Country",
             coordinates: { latitude, longitude },
           });
         } catch (error) {
-          reject(error);
+          console.warn("Error getting location details:", error);
+          // Still resolve with coordinates even if geocoding fails
+          resolve({
+            city: "Unknown City",
+            country: "Unknown Country",
+            coordinates: {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            },
+          });
         }
       },
       (error) => {
-        reject(error);
+        clearTimeout(timeoutId);
+        console.warn("Geolocation error:", error);
+        // Provide fallback location on geolocation error
+        resolve({
+          city: "Unknown City",
+          country: "Unknown Country",
+          coordinates: { latitude: 0, longitude: 0 },
+        });
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 300000, // 5 minutes
       }
     );
   });
@@ -84,9 +126,8 @@ export const updateUserProfile = async (profile: Partial<UserProfile>): Promise<
       {
         id: user.id,
         ...profile,
-        updated_at: new Date().toISOString(),
       },
-      { onConflict: ["id"] }
+      { onConflict: "id" }
     )
     .select()
     .single();
@@ -99,5 +140,21 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
   if (!user) return null;
   const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single();
   if (error) return null;
+  return data as UserProfile;
+};
+
+export const updateUserLocation = async (): Promise<UserProfile> => {
+  const user = (await supabase.auth.getUser()).data.user;
+  if (!user) throw new Error("Not authenticated");
+
+  const location = await getUserLocation();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ location })
+    .eq("id", user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
   return data as UserProfile;
 };
