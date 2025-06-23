@@ -459,6 +459,22 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                   {statsData.totalRepsToday}
                 </span>
               </div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                  Current Streak:
+                </h4>
+                <span className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                  {userProfile?.stats?.streak || 0} days
+                </span>
+              </div>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                  Longest Streak:
+                </h4>
+                <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {userProfile?.stats?.longestStreak || 0} days
+                </span>
+              </div>
 
               <h4 className="text-md font-medium mb-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
                 Exercises:

@@ -11,7 +11,7 @@ CREATE TABLE profiles (
     last_name TEXT NOT NULL,
     username TEXT,
     location JSONB NOT NULL,
-    stats JSONB NOT NULL DEFAULT '{"totalReps": 0, "totalSets": 0, "streak": 0, "achievements": []}',
+    stats JSONB NOT NULL DEFAULT '{"streak": 0, "longestStreak": 0, "achievements": []}',
     timer_duration INTEGER DEFAULT 1000,
     notifications_enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,

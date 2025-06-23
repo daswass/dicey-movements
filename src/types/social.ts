@@ -12,9 +12,8 @@ export interface UserProfile {
     };
   };
   stats: {
-    totalReps: number;
-    totalSets: number;
     streak: number;
+    longestStreak: number;
     achievements: Achievement[];
   };
   friends: string[]; // Array of friend user IDs
