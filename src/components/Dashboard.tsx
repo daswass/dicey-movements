@@ -3,7 +3,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getExerciseById } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
+import { AchievementService } from "../utils/achievementService";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
+import { AchievementNotification } from "./AchievementNotification";
+import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
 import ExerciseDisplay from "./ExerciseDisplay";
 import History from "./History";
@@ -67,6 +70,10 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const [currentExercise, setCurrentExercise] = useState<any | null>(null);
     const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
     const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
+
+    // Achievement state
+    const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
+    const [showAchievements, setShowAchievements] = useState(false);
 
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
@@ -152,6 +159,26 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         setHistory((prevHistory) => prevHistory.slice(1)); // Revert locally if insert fails
       } else {
         await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
+
+        // Check for achievements after successful activity insertion
+        try {
+          // Check single workout achievements
+          const singleWorkoutAchievements = await AchievementService.checkSingleWorkoutAchievements(
+            user.id,
+            latestSession.reps
+          );
+
+          // Check general achievements
+          const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
+
+          // Combine and show notifications
+          const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
+          if (allNewAchievements.length > 0) {
+            setUnlockedAchievements(allNewAchievements);
+          }
+        } catch (error) {
+          console.error("Error checking achievements:", error);
+        }
       }
 
       setCurrentWorkoutComplete(true);
@@ -428,6 +455,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             {mainContent}
             {currentWorkoutContent}
             <History history={sessionHistory as any[]} />
+            {showAchievements && <Achievements userProfile={userProfile} />}
           </div>
 
           <div className="col-span-1 space-y-6">
@@ -436,6 +464,11 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-xl font-semibold">Stats</h3>
                 <div className="flex space-x-2">
+                  <button
+                    onClick={() => setShowAchievements(!showAchievements)}
+                    className="px-3 py-1.5 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
+                    {showAchievements ? "Hide" : "Show"} Achievements
+                  </button>
                   <button
                     onClick={() => handleResetClick("game")}
                     className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
@@ -513,6 +546,17 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             </div>
           </div>
         </div>
+
+        {/* Achievement Notifications */}
+        {unlockedAchievements.map((achievementId, index) => (
+          <AchievementNotification
+            key={`${achievementId}-${index}`}
+            achievementId={achievementId}
+            onClose={() => {
+              setUnlockedAchievements((prev) => prev.filter((id) => id !== achievementId));
+            }}
+          />
+        ))}
 
         {showSettings && stableUserProfile && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

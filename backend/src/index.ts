@@ -234,25 +234,6 @@ app.get("/api/profile/:userId", async (req, res) => {
   }
 });
 
-// Friend activity routes
-app.get("/api/friends/activity/:userId", async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { data, error } = await supabase
-      .from("friend_activities")
-      .select("*")
-      .eq("user_id", userId)
-      .order("timestamp", { ascending: false })
-      .limit(20);
-
-    if (error) throw error;
-    res.json(data);
-  } catch (error) {
-    console.error("Error fetching friend activities:", error);
-    res.status(500).json({ error: "Failed to fetch friend activities" });
-  }
-});
-
 // Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

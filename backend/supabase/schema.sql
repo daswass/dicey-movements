@@ -1,7 +1,6 @@
 -- Drop existing tables if they exist
 DROP TABLE IF EXISTS profiles CASCADE;
 DROP TABLE IF EXISTS leaderboard CASCADE;
-DROP TABLE IF EXISTS friend_activities CASCADE;
 DROP TABLE IF EXISTS friends CASCADE;
 
 -- Create profiles table
@@ -53,20 +52,9 @@ CREATE TABLE friends (
     UNIQUE(user_id, friend_id)
 );
 
--- Create friend_activities table
-CREATE TABLE friend_activities (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    user_id UUID REFERENCES profiles(id) NOT NULL,
-    username TEXT NOT NULL,
-    activity_type TEXT NOT NULL,
-    details TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
 -- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leaderboard ENABLE ROW LEVEL SECURITY;
-ALTER TABLE friend_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE friends ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
@@ -76,8 +64,6 @@ DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
 DROP POLICY IF EXISTS "Users can view other profiles" ON profiles;
 DROP POLICY IF EXISTS "Anyone can view leaderboard" ON leaderboard;
 DROP POLICY IF EXISTS "Users can add their own scores" ON leaderboard;
-DROP POLICY IF EXISTS "Users can view their own activities" ON friend_activities;
-DROP POLICY IF EXISTS "Users can add their own activities" ON friend_activities;
 DROP POLICY IF EXISTS "Users can view their own friends" ON friends;
 DROP POLICY IF EXISTS "Users can send friend requests" ON friends;
 DROP POLICY IF EXISTS "Users can update their own friend requests" ON friends;
@@ -108,15 +94,6 @@ CREATE POLICY "Users can add their own scores"
     ON leaderboard FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
--- Friend activities policies
-CREATE POLICY "Users can view their own activities"
-    ON friend_activities FOR SELECT
-    USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can add their own activities"
-    ON friend_activities FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
 -- Friends policies
 CREATE POLICY "Users can view their own friends"
     ON friends FOR SELECT
@@ -129,23 +106,6 @@ CREATE POLICY "Users can send friend requests"
 CREATE POLICY "Users can update their own friend requests"
     ON friends FOR UPDATE
     USING (auth.uid() = friend_id);
-
--- Create function to handle friend request acceptance
-CREATE OR REPLACE FUNCTION handle_friend_request()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.status = 'accepted' AND OLD.status = 'pending' THEN
-        -- Create a friend activity for the acceptance
-        INSERT INTO friend_activities (user_id, username, activity_type, details)
-        SELECT 
-            NEW.user_id,
-            (SELECT username FROM profiles WHERE id = NEW.user_id),
-            'friend_accepted',
-            'Accepted friend request from ' || (SELECT username FROM profiles WHERE id = NEW.friend_id);
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Create trigger for friend request acceptance
 CREATE TRIGGER on_friend_request_accepted
@@ -201,23 +161,3 @@ GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO postgres, service_role;
-
--- Add foreign key constraint to friend_activities
-ALTER TABLE friend_activities
-ADD CONSTRAINT friend_activities_user_id_fkey
-FOREIGN KEY (user_id) REFERENCES profiles(id);
-
--- Update RLS policies for friend_activities
-DROP POLICY IF EXISTS "Users can view their own activities" ON friend_activities;
-DROP POLICY IF EXISTS "Users can add their own activities" ON friend_activities;
-
-CREATE POLICY "Users can view their own activities"
-    ON friend_activities FOR SELECT
-    USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can add their own activities"
-    ON friend_activities FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
--- Grant necessary permissions
-GRANT ALL ON friend_activities TO postgres, service_role; 
