@@ -5,6 +5,7 @@ export const getUserLocation = async (): Promise<{
   city: string;
   country: string;
   coordinates: { latitude: number; longitude: number };
+  timezone: string;
 }> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -13,6 +14,7 @@ export const getUserLocation = async (): Promise<{
         city: "Unknown City",
         country: "Unknown Country",
         coordinates: { latitude: 0, longitude: 0 },
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       });
       return;
     }
@@ -23,6 +25,7 @@ export const getUserLocation = async (): Promise<{
         city: "Unknown City",
         country: "Unknown Country",
         coordinates: { latitude: 0, longitude: 0 },
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       });
     }, 10000);
 
@@ -47,6 +50,7 @@ export const getUserLocation = async (): Promise<{
               data.address?.city || data.address?.town || data.address?.village || "Unknown City",
             country: data.address?.country || "Unknown Country",
             coordinates: { latitude, longitude },
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
           });
         } catch (error) {
           console.warn("Error getting location details:", error);
@@ -58,6 +62,7 @@ export const getUserLocation = async (): Promise<{
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             },
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
           });
         }
       },
@@ -69,6 +74,7 @@ export const getUserLocation = async (): Promise<{
           city: "Unknown City",
           country: "Unknown Country",
           coordinates: { latitude: 0, longitude: 0 },
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         });
       },
       {

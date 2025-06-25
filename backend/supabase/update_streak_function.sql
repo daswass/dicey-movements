@@ -11,17 +11,23 @@ DECLARE
     consecutive_days INTEGER := 0;
     current_date DATE := CURRENT_DATE;
     check_date DATE;
+    user_timezone TEXT := 'UTC';
+    user_current_date DATE;
 BEGIN
     -- Get current streak and longest streak from profile
     SELECT 
         COALESCE((stats->>'streak')::INTEGER, 0),
-        COALESCE((stats->>'longestStreak')::INTEGER, 0)
-    INTO current_streak, longest_streak
+        COALESCE((stats->>'longestStreak')::INTEGER, 0),
+        COALESCE(location->>'timezone', 'UTC')
+    INTO current_streak, longest_streak, user_timezone
     FROM profiles 
     WHERE id = user_id_param;
 
-    -- Get the most recent activity date
-    SELECT MAX(DATE(timestamp))
+    -- Get current date in user's timezone
+    user_current_date := (NOW() AT TIME ZONE user_timezone)::DATE;
+
+    -- Get the most recent activity date in user's timezone
+    SELECT MAX((timestamp AT TIME ZONE user_timezone)::DATE)
     INTO last_activity_date
     FROM activities 
     WHERE user_id = user_id_param;
@@ -30,19 +36,19 @@ BEGIN
     IF last_activity_date IS NULL THEN
         current_streak := 0;
     ELSE
-        -- Check if the last activity was today or yesterday
-        IF last_activity_date = current_date THEN
+        -- Check if the last activity was today or yesterday in user's timezone
+        IF last_activity_date = user_current_date THEN
             -- Activity was today, check consecutive days backwards
-            check_date := current_date;
+            check_date := user_current_date;
             consecutive_days := 0;
             
             -- Count consecutive days with at least one activity
-            WHILE check_date >= current_date - INTERVAL '365 days' LOOP
-                -- Check if there's at least one activity on this date
+            WHILE check_date >= user_current_date - INTERVAL '365 days' LOOP
+                -- Check if there's at least one activity on this date in user's timezone
                 IF EXISTS (
                     SELECT 1 FROM activities 
                     WHERE user_id = user_id_param 
-                    AND DATE(timestamp) = check_date
+                    AND (timestamp AT TIME ZONE user_timezone)::DATE = check_date
                 ) THEN
                     consecutive_days := consecutive_days + 1;
                     check_date := check_date - INTERVAL '1 day';
@@ -53,7 +59,7 @@ BEGIN
             END LOOP;
             
             current_streak := consecutive_days;
-        ELSIF last_activity_date = current_date - INTERVAL '1 day' THEN
+        ELSIF last_activity_date = user_current_date - INTERVAL '1 day' THEN
             -- Last activity was yesterday, continue the streak
             current_streak := current_streak + 1;
         ELSE

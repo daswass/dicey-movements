@@ -595,7 +595,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               </h3>
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 {showConfirmModal.type === "game"
-                  ? "This will reset all game progress, including multipliers and history."
+                  ? "This will reset today's game progress, including multipliers and history."
                   : "This will reset all exercise multipliers to 1x."}
               </p>
               <div className="flex justify-end space-x-3">

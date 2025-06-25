@@ -10,6 +10,7 @@ export interface UserProfile {
       latitude: number;
       longitude: number;
     };
+    timezone: string;
   };
   stats: {
     streak: number;
