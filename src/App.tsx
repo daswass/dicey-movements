@@ -6,6 +6,8 @@ import Dashboard from "./components/Dashboard";
 import { FriendActivity } from "./components/FriendActivity";
 import { Friends } from "./components/Friends";
 import OuraCallback from "./components/OuraCallback";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+import TermsOfService from "./components/TermsOfService";
 import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
@@ -600,6 +602,8 @@ function App() {
             />
             <Route path="/activity" element={<FriendActivity />} />
             <Route path="/oura/callback" element={<OuraCallback />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
           </Routes>
         ) : (
           <div className="p-4 text-center text-gray-500">
@@ -608,7 +612,21 @@ function App() {
         )}
 
         <footer className="text-center p-4 text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-          © {new Date().getFullYear()} Wassercise | POWER {dayOfWeek}!
+          <div className="mb-2">
+            © {new Date().getFullYear()} Wassercise | POWER {dayOfWeek}!
+          </div>
+          <div className="flex justify-center space-x-4 text-xs">
+            <Link
+              to="/privacy-policy"
+              className="text-gray-400 hover:text-gray-300 transition-colors">
+              Privacy Policy
+            </Link>
+            <Link
+              to="/terms-of-service"
+              className="text-gray-400 hover:text-gray-300 transition-colors">
+              Terms of Service
+            </Link>
+          </div>
         </footer>
       </div>
     </Router>
