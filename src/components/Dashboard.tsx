@@ -169,6 +169,26 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       } else {
         await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
 
+        // Refresh user profile to get updated streak data
+        try {
+          const { data: updatedProfile, error: profileError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+
+          if (updatedProfile && !profileError) {
+            setUserProfile({
+              ...updatedProfile,
+              timer_duration: updatedProfile.timer_duration || 300,
+            });
+          } else {
+            console.error("Dashboard: Error refreshing user profile:", profileError);
+          }
+        } catch (profileError) {
+          console.error("Dashboard: Exception refreshing user profile:", profileError);
+        }
+
         // Check for achievements after successful activity insertion
         try {
           // Check single workout achievements
@@ -195,15 +215,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       onStartTimer();
       setLatestSession(null);
       setIsRollAndStartMode(false); // Reset roll and start mode
-    }, [
-      latestSession,
-      user?.id,
-      multipliers,
-      fetchHistory,
-      setCurrentWorkoutComplete,
-      setTimerComplete,
-      onStartTimer,
-    ]);
+    }, [latestSession, user?.id, multipliers, fetchHistory, setUserProfile]);
 
     const fetchLastSessionStart = useCallback(async () => {
       if (!user) return;
