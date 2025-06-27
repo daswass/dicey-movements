@@ -18,6 +18,7 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const workerRef = useRef<Worker | null>(null);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const isPausingRef = useRef(false); // Track if we're currently pausing
 
   useEffect(() => {
     if (!workerRef.current) {
@@ -35,7 +36,10 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         if (type === "TICK") {
           setTimeLeft(workerTimeLeft);
-          setIsTimerActive(true);
+          // Only set isTimerActive to true if we're not currently pausing
+          if (!isPausingRef.current) {
+            setIsTimerActive(true);
+          }
         } else if (type === "COMPLETE") {
           setTimeLeft(0);
           setIsTimerActive(false);
@@ -78,8 +82,13 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const pauseTimer = useCallback(() => {
     if (workerRef.current) {
       console.log("[Context Action] Sending PAUSE to worker");
+      isPausingRef.current = true; // Set flag before sending pause
       workerRef.current.postMessage({ type: "PAUSE" });
       setIsTimerActive(false);
+      // Reset the flag after a short delay to allow the worker to send the TICK message
+      setTimeout(() => {
+        isPausingRef.current = false;
+      }, 100);
     }
   }, []);
 
@@ -88,6 +97,7 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.log("[Context Action] Sending RESUME to worker");
       workerRef.current.postMessage({ type: "RESUME" });
       setIsTimerActive(true);
+      isPausingRef.current = false; // Reset flag when resuming
     }
   }, []);
 

@@ -590,6 +590,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           <AchievementNotification
             key={`${achievementId}-${index}`}
             achievementId={achievementId}
+            index={index}
             onClose={() => {
               setUnlockedAchievements((prev) => prev.filter((id) => id !== achievementId));
             }}

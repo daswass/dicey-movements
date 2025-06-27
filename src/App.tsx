@@ -10,7 +10,11 @@ import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
-import { getUserLocation, updateUserLocation } from "./utils/socialService";
+import {
+  getUserLocation,
+  updateUserLocation,
+  fetchPendingFriendRequests,
+} from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
@@ -25,6 +29,8 @@ function App() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu open/close
   const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
+  const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
+  const [showFriendRequestNotification, setShowFriendRequestNotification] = useState(false);
 
   const {
     isTimerActive,
@@ -197,6 +203,11 @@ function App() {
     });
   }, []);
 
+  const refreshPendingFriendRequests = useCallback(async () => {
+    const count = await fetchPendingFriendRequests();
+    setPendingFriendRequests(count);
+  }, []);
+
   const handleStartTimer = useCallback(() => {
     if (!userProfile) return;
     const duration = userProfile.timer_duration;
@@ -349,6 +360,27 @@ function App() {
     }
   }, [timerComplete, notifyTimerExpired]);
 
+  useEffect(() => {
+    fetchPendingFriendRequests().then((requests) => {
+      setPendingFriendRequests(requests);
+      // Show notification if there are pending requests and user is on dashboard
+      if (requests > 0 && window.location.pathname === "/") {
+        setShowFriendRequestNotification(true);
+        // Auto-hide notification after 5 seconds
+        setTimeout(() => {
+          setShowFriendRequestNotification(false);
+        }, 5000);
+      }
+    });
+  }, [userProfile?.id]);
+
+  // Refresh pending requests when navigating to Friends page
+  useEffect(() => {
+    if (window.location.pathname === "/friends") {
+      refreshPendingFriendRequests();
+    }
+  }, [window.location.pathname, refreshPendingFriendRequests]);
+
   if (!session) {
     return <Auth />;
   }
@@ -390,6 +422,11 @@ function App() {
                 )}
                 <Link to="/friends" className="nav-link">
                   Friends
+                  {pendingFriendRequests > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                      {pendingFriendRequests}
+                    </span>
+                  )}
                 </Link>
                 <Link to="/activity" className="nav-link">
                   Activity
@@ -467,6 +504,11 @@ function App() {
                   className="mobile-nav-link"
                   onClick={() => setIsMenuOpen(false)}>
                   Friends
+                  {pendingFriendRequests > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                      {pendingFriendRequests}
+                    </span>
+                  )}
                 </Link>
                 <Link
                   to="/activity"
@@ -513,6 +555,27 @@ function App() {
         {/* Spacer div to push content below fixed header */}
         <div className="h-16"></div>
 
+        {/* Friend Request Notification */}
+        {showFriendRequestNotification && (
+          <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-3">
+            <span className="text-lg">👥</span>
+            <span>
+              You have {pendingFriendRequests} pending friend request
+              {pendingFriendRequests > 1 ? "s" : ""}!
+            </span>
+            <Link
+              to="/friends"
+              className="ml-2 text-white hover:text-gray-200 transition-colors underline">
+              View
+            </Link>
+            <button
+              onClick={() => setShowFriendRequestNotification(false)}
+              className="ml-2 text-white hover:text-gray-200 transition-colors">
+              ×
+            </button>
+          </div>
+        )}
+
         {settings ? (
           <Routes>
             <Route
@@ -531,7 +594,10 @@ function App() {
                 />
               }
             />
-            <Route path="/friends" element={<Friends />} />
+            <Route
+              path="/friends"
+              element={<Friends onFriendRequestUpdate={refreshPendingFriendRequests} />}
+            />
             <Route path="/activity" element={<FriendActivity />} />
             <Route path="/oura/callback" element={<OuraCallback />} />
           </Routes>

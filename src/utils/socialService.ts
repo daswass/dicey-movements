@@ -164,3 +164,28 @@ export const updateUserLocation = async (): Promise<UserProfile> => {
   if (error) throw error;
   return data as UserProfile;
 };
+
+export const fetchPendingFriendRequests = async (): Promise<number> => {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return 0;
+
+    const { data, error } = await supabase
+      .from("friends")
+      .select("id")
+      .eq("friend_id", user.id)
+      .eq("status", "pending");
+
+    if (error) {
+      console.error("Error fetching pending friend requests:", error);
+      return 0;
+    }
+
+    return data?.length || 0;
+  } catch (error) {
+    console.error("Error in fetchPendingFriendRequests:", error);
+    return 0;
+  }
+};

@@ -51,6 +51,7 @@ build/
 # Gatsby
 .cache/
 public/
+!public/_redirects
 
 # Docusaurus
 .docusaurus/

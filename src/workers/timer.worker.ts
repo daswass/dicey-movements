@@ -102,6 +102,13 @@ self.onmessage = (e: MessageEvent) => {
 
         const elapsedSinceLastStart = Date.now() - startTime;
         elapsedAtPauseMs += elapsedSinceLastStart;
+
+        // Calculate and send the current timeLeft when pausing
+        const currentElapsedMs = elapsedAtPauseMs;
+        const remainingMs = totalDurationMs - currentElapsedMs;
+        const currentTimeLeftSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+        self.postMessage({ type: "TICK", timeLeft: currentTimeLeftSeconds });
+
         startTime = null;
       } else {
         console.warn(`${logPrefix} PAUSE called but timer not active or already paused.`);

@@ -5,6 +5,7 @@ import { getAchievementById } from "../data/achievements";
 interface AchievementNotificationProps {
   achievementId: string;
   onClose: () => void;
+  index?: number; // Add index for stacking
 }
 
 const rarityIcons = {
@@ -17,15 +18,16 @@ const rarityIcons = {
 
 const rarityGradients = {
   common: "from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800",
-  uncommon: "from-green-100 to-green-200 dark:from-green-900/20 dark:to-green-800/20",
-  rare: "from-blue-100 to-blue-200 dark:from-blue-900/20 dark:to-blue-800/20",
-  epic: "from-purple-100 to-purple-200 dark:from-purple-900/20 dark:to-purple-800/20",
-  legendary: "from-yellow-100 to-yellow-200 dark:from-yellow-900/20 dark:to-yellow-800/20",
+  uncommon: "from-green-100 to-green-200 dark:from-green-800 dark:to-green-700",
+  rare: "from-blue-100 to-blue-200 dark:from-blue-800 dark:to-blue-700",
+  epic: "from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-700",
+  legendary: "from-yellow-100 to-yellow-200 dark:from-yellow-800 dark:to-yellow-700",
 };
 
 export const AchievementNotification: React.FC<AchievementNotificationProps> = ({
   achievementId,
   onClose,
+  index = 0,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const achievement = getAchievementById(achievementId);
@@ -48,8 +50,11 @@ export const AchievementNotification: React.FC<AchievementNotificationProps> = (
 
   if (!achievement) return null;
 
+  // Calculate vertical position based on index
+  const topOffset = 16 + index * 140; // 16px from top + 140px per notification
+
   return (
-    <div className="fixed top-4 right-4 z-50">
+    <div className="fixed right-4 z-50" style={{ top: `${topOffset}px` }}>
       <div
         className={`transform transition-all duration-300 ease-out ${
           isVisible ? "translate-x-0 opacity-100 scale-100" : "translate-x-full opacity-0 scale-95"

@@ -46,7 +46,9 @@ interface RawFriendRecord {
   } | null;
 }
 
-export const Friends: React.FC = () => {
+export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
+  onFriendRequestUpdate,
+}) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]); // Accepted friends
@@ -82,7 +84,7 @@ export const Friends: React.FC = () => {
       if (error) throw error;
 
       // --- CRITICAL FIX: Explicitly cast the fetched data ---
-      const typedFriendRecords: RawFriendRecord[] = data as RawFriendRecord[];
+      const typedFriendRecords: RawFriendRecord[] = data as unknown as RawFriendRecord[];
 
       const acceptedRaw: Friend[] = []; // Temporary array to hold all accepted records before de-duplication
       const sentByMe: Friend[] = [];
@@ -91,7 +93,14 @@ export const Friends: React.FC = () => {
       typedFriendRecords?.forEach((record) => {
         const isOutgoing = record.user_id === user.id; // True if I initiated the request
         // Determine which profile is the 'other' user in this record
-        const otherUserProfile = isOutgoing ? record.receiver_profile : record.initiator_profile;
+        // Handle the case where profiles might be arrays from Supabase
+        const initiatorProfile = Array.isArray(record.initiator_profile)
+          ? record.initiator_profile[0]
+          : record.initiator_profile;
+        const receiverProfile = Array.isArray(record.receiver_profile)
+          ? record.receiver_profile[0]
+          : record.receiver_profile;
+        const otherUserProfile = isOutgoing ? receiverProfile : initiatorProfile;
 
         const friendEntry: Friend = {
           id: record.id,
@@ -240,6 +249,9 @@ export const Friends: React.FC = () => {
       await fetchFriends();
       setSearchTerm(""); // Clear search term after sending request
       setError(null);
+
+      // Call the callback to update the badge count
+      onFriendRequestUpdate?.();
     } catch (err) {
       console.error("Error sending friend request:", err);
       setError("Failed to send friend request");
@@ -266,6 +278,9 @@ export const Friends: React.FC = () => {
       await fetchFriends(); // Re-fetch all friend lists
       setSearchTerm(""); // Clear search term after accepting
       setError(null);
+
+      // Call the callback to update the badge count
+      onFriendRequestUpdate?.();
     } catch (err) {
       console.error("Error accepting friend request:", err);
       setError("Failed to accept friend request");
@@ -285,6 +300,9 @@ export const Friends: React.FC = () => {
       if (error) throw error;
       await fetchFriends(); // Re-fetch all friend lists
       setError(null);
+
+      // Call the callback to update the badge count
+      onFriendRequestUpdate?.();
     } catch (err) {
       console.error("Error rejecting friend request:", err);
       setError("Failed to reject friend request");
