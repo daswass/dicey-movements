@@ -67,13 +67,15 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       type: "game" | "multipliers" | null;
     }>({ show: false, type: null });
     const [user, setUser] = useState<any>(null);
-    const [currentExercise, setCurrentExercise] = useState<any | null>(null);
     const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
     const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
 
     // Achievement state
     const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
     const [showAchievements, setShowAchievements] = useState(false);
+
+    // Add new state for Roll & Start mode
+    const [isRollAndStartMode, setIsRollAndStartMode] = useState(false);
 
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
@@ -130,6 +132,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setCurrentWorkoutComplete(false);
     }, [setTimerComplete, setCurrentWorkoutComplete]);
 
+    const handleRollAndStart = useCallback(() => {
+      setIsRollAndStartMode(true);
+      // Don't set timerComplete to true to avoid triggering the sound
+      // Instead, we'll show the dice roller directly
+      setCurrentWorkoutComplete(false);
+    }, []);
+
     const handleWorkoutComplete = useCallback(async () => {
       setShowHighFiveModal(true);
 
@@ -185,6 +194,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setTimerComplete(false);
       onStartTimer();
       setLatestSession(null);
+      setIsRollAndStartMode(false); // Reset roll and start mode
     }, [
       latestSession,
       user?.id,
@@ -217,6 +227,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setLatestSession(null);
       setCurrentWorkoutComplete(false);
       setTimerComplete(false);
+      setIsRollAndStartMode(false); // Reset roll and start mode
 
       const { error } = await supabase
         .from("profiles")
@@ -303,11 +314,19 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setShowConfirmModal({ show: false, type: null });
     }, []);
 
-    const handleDiceRoll = useCallback((session: any) => {
-      setCurrentExercise(session.exercise);
-      setCurrentWorkoutComplete(false);
-      setLatestSession(session);
-    }, []);
+    const handleDiceRoll = useCallback(
+      (session: any) => {
+        setCurrentWorkoutComplete(false);
+        setLatestSession(session);
+
+        // If we're in roll and start mode, start the timer after the roll
+        if (isRollAndStartMode) {
+          setIsRollAndStartMode(false);
+          onStartTimer();
+        }
+      },
+      [isRollAndStartMode, onStartTimer]
+    );
 
     // Memoize the sessionHistory to prevent unnecessary recalculations
     const sessionHistory = useMemo(() => {
@@ -387,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     // Memoize the main content to prevent unnecessary re-renders
     const mainContent = useMemo(() => {
-      if (timerComplete && !currentWorkoutComplete) {
+      if ((timerComplete && !currentWorkoutComplete) || isRollAndStartMode) {
         return (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Roll the Dice</h2>
@@ -397,6 +416,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               multipliers={multipliers}
               rollCompleted={!!latestSession}
               session={latestSession}
+              autoRoll={isRollAndStartMode}
             />
           </div>
         );
@@ -409,7 +429,11 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               <Settings size={20} className="text-gray-500 dark:text-gray-400" />
             </button>
             <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
-            <Timer duration={stableUserProfile?.timer_duration} onComplete={handleTimerComplete} />
+            <Timer
+              duration={stableUserProfile?.timer_duration}
+              onComplete={handleTimerComplete}
+              onRollAndStart={handleRollAndStart}
+            />
           </div>
         );
       }
@@ -417,11 +441,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     }, [
       timerComplete,
       currentWorkoutComplete,
+      isRollAndStartMode,
       latestSession,
       stableUserProfile,
       multipliers,
       handleDiceRoll,
       handleTimerComplete,
+      handleRollAndStart,
       showSettings,
     ]);
 
@@ -467,46 +493,58 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                   <button
                     onClick={() => setShowAchievements(!showAchievements)}
                     className="px-3 py-1.5 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
-                    {showAchievements ? "Hide" : "Show"} Achievements
+                    {showAchievements ? "Hide" : ""} Achievements
                   </button>
                   <button
                     onClick={() => handleResetClick("game")}
                     className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
-                    Reset Game
+                    Reset Day
                   </button>
                 </div>
               </div>
               <div className="flex justify-between items-center mb-4 pt-2 border-t border-gray-200 dark:border-gray-700">
-                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                  Total Sets Today:
-                </h4>
-                <span className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {statsData.totalSetsToday}
-                </span>
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Today:</h4>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Sets</h4>
+                    <span className="text-xl font-bold text-green-600 dark:text-green-400">
+                      {statsData.totalSetsToday}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Reps</h4>
+                    <span className="text-xl font-bold text-green-600 dark:text-green-400">
+                      {statsData.totalRepsToday}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                  Total Reps Today:
-                </h4>
-                <span className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {statsData.totalRepsToday}
-                </span>
-              </div>
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                  Current Streak:
-                </h4>
-                <span className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                  {userProfile?.stats?.streak || 0} days
-                </span>
-              </div>
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                  Longest Streak:
-                </h4>
-                <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {userProfile?.stats?.longestStreak || 0} days
-                </span>
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                      Streak:
+                    </h4>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                      Current
+                    </h4>
+                    <span className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                      {userProfile?.stats?.streak || 0} days
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
+                      Longest
+                    </h4>
+                    <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                      {userProfile?.stats?.longestStreak || 0} days
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <h4 className="text-md font-medium mb-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
@@ -591,7 +629,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
               <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-                {showConfirmModal.type === "game" ? "Reset Game?" : "Reset Multipliers?"}
+                Reset Day?
               </h3>
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 {showConfirmModal.type === "game"

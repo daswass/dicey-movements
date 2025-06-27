@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { getExerciseById } from "../data/exercises";
 import { DiceRoll, ExerciseMultipliers, WorkoutSession } from "../types";
 import Dice from "./Dice"; // 1. Import the Dice component
@@ -8,6 +8,7 @@ interface DiceRollerProps {
   multipliers: ExerciseMultipliers;
   rollCompleted: boolean;
   session?: WorkoutSession | null;
+  autoRoll?: boolean; // New prop for auto-rolling
 }
 
 const DiceRoller: React.FC<DiceRollerProps> = ({
@@ -15,6 +16,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   multipliers,
   rollCompleted,
   session,
+  autoRoll = false,
 }) => {
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [diceValues, setDiceValues] = useState<DiceRoll | null>(null);
@@ -25,7 +27,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
     }
   }, [session]);
 
-  const rollDice = () => {
+  const rollDice = useCallback(() => {
     setIsRolling(true);
     const animationDuration = 1500;
     const frames = 15;
@@ -59,7 +61,14 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         onRollComplete(session);
       }
     }, interval);
-  };
+  }, [multipliers, onRollComplete]);
+
+  // Auto-roll effect
+  useEffect(() => {
+    if (autoRoll && !rollCompleted && !isRolling) {
+      rollDice();
+    }
+  }, [autoRoll, rollCompleted, isRolling, rollDice]);
 
   return (
     <div className="flex flex-col items-center">

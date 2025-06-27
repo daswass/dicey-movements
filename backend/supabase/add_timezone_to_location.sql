@@ -30,7 +30,7 @@ BEGIN
             'coordinates', jsonb_build_object('latitude', 0, 'longitude', 0),
             'timezone', COALESCE(NEW.raw_user_meta_data->>'timezone', 'UTC')
         ),
-        300,
+        1000,
         true
     );
     RETURN NEW;

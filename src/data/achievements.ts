@@ -37,6 +37,19 @@ export const achievements: AchievementDefinition[] = [
     points: 10,
   },
   {
+    id: "weekday_warrior",
+    name: "Weekday Warrior",
+    description: "Maintain a 5-day workout streak",
+    type: "streak",
+    icon: "⚡",
+    criteria: {
+      type: "streak_days",
+      value: 5,
+    },
+    rarity: "uncommon",
+    points: 25,
+  },
+  {
     id: "week_warrior",
     name: "Week Warrior",
     description: "Maintain a 7-day workout streak",
@@ -46,8 +59,8 @@ export const achievements: AchievementDefinition[] = [
       type: "streak_days",
       value: 7,
     },
-    rarity: "uncommon",
-    points: 25,
+    rarity: "rare",
+    points: 27,
   },
   {
     id: "month_master",

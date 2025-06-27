@@ -142,7 +142,7 @@ BEGIN
             'country', 'Unknown',
             'coordinates', jsonb_build_object('latitude', 0, 'longitude', 0)
         ),
-        300,
+        1000,
         true
     );
     RETURN NEW;

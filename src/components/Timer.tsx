@@ -4,11 +4,13 @@ import { useTimerWorker } from "../contexts/TimerWorkerContext";
 interface TimerProps {
   duration: number; // The initial total duration for progress calculation (from user profile)
   onComplete: () => void; // Callback to Dashboard when timer visually completes
+  onRollAndStart?: () => void; // New callback for Roll & Start functionality
 }
 
 const Timer: React.FC<TimerProps> = ({
   duration, // This is the original duration for the progress bar.
   onComplete,
+  onRollAndStart,
 }) => {
   // Destructure state and control functions directly from the context
   const { isTimerActive, timeLeft, startTimer, stopTimer, pauseTimer, resumeTimer } =
@@ -64,6 +66,13 @@ const Timer: React.FC<TimerProps> = ({
     console.log("Timer component - Start button clicked. Starting duration:", duration);
     startTimer(duration); // Start with the full duration from props
   }, [startTimer, duration]);
+
+  const handleRollAndStart = useCallback(() => {
+    console.log("Timer component - Roll & Start button clicked.");
+    if (onRollAndStart) {
+      onRollAndStart();
+    }
+  }, [onRollAndStart]);
 
   const handlePause = useCallback(() => {
     console.log("Timer component - Pause button clicked.");
@@ -139,11 +148,20 @@ const Timer: React.FC<TimerProps> = ({
       <div className="flex space-x-4 mt-4">
         {/* Start Button: Only if ready to start a new cycle */}
         {isReadyToStart && (
-          <button
-            onClick={handleStart}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            Start
-          </button>
+          <>
+            <button
+              onClick={handleStart}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+              Start
+            </button>
+            {onRollAndStart && (
+              <button
+                onClick={handleRollAndStart}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                Roll & Start
+              </button>
+            )}
+          </>
         )}
 
         {/* Pause Button: Only if currently running */}
