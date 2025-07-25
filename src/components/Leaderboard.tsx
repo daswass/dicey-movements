@@ -1,6 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion"; // Correct, modern import
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
+
+// Global subscription tracker to prevent multiple subscriptions across component instances
+const globalSubscriptionTracker = new Map<string, boolean>();
+
+// Component instance counter to ensure unique channel names
+let componentInstanceCounter = 0;
 
 // --- Helper function to get a CSS class for the flash animation ---
 const getFlashClass = (change?: "increase" | "decrease") => {
@@ -75,39 +81,32 @@ interface Activity {
 
 type ScoreType = "totalReps" | "totalSets" | "totalSteps";
 
-export const Leaderboard: React.FC = () => {
+const LeaderboardComponent: React.FC = () => {
+  // Create a unique instance ID for this component
+  const instanceId = useMemo(() => {
+    componentInstanceCounter += 1;
+    return componentInstanceCounter;
+  }, []);
+
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>(getStoredScoreType);
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">(getStoredTimeRange);
+
   const previousEntriesRef = useRef<Map<string, number>>(new Map());
+  const [channelStatus, setChannelStatus] = useState<string>("disconnected");
+  const [retryTrigger, setRetryTrigger] = useState(0);
+  const isMountedRef = useRef(true);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentChannelRef = useRef<any>(null);
+  const isSettingUpRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+  const lastSetupScoreTypeRef = useRef<string | null>(null);
+  // Add ref to track if component has been fully initialized
+  const isFullyInitializedRef = useRef(false);
 
-  // Update localStorage when scoreType changes
-  useEffect(() => {
-    setStoredScoreType(scoreType);
-  }, [scoreType]);
-
-  // Update localStorage when timeRange changes
-  useEffect(() => {
-    setStoredTimeRange(timeRange);
-  }, [timeRange]);
-
-  const fetchLeaderboard = useCallback(async () => {
-    try {
-      if (scoreType === "totalSteps") {
-        // Fetch Oura steps data
-        await fetchOuraStepsLeaderboard();
-      } else {
-        // Fetch regular activity data
-        await fetchActivityLeaderboard();
-      }
-    } catch (err) {
-      console.error("Error fetching leaderboard:", err);
-      setError("Failed to load leaderboard");
-    }
-  }, [scoreType, timeRange]);
-
-  const fetchActivityLeaderboard = async () => {
+  // Memoize the fetchActivityLeaderboard function to prevent recreation
+  const fetchActivityLeaderboard = useCallback(async () => {
     let query = supabase
       .from("activities")
       .select(
@@ -189,9 +188,10 @@ export const Leaderboard: React.FC = () => {
       .sort((a, b) => b.score - a.score);
 
     setEntries(newEntries);
-  };
+  }, [scoreType, timeRange]);
 
-  const fetchOuraStepsLeaderboard = async () => {
+  // Memoize the fetchOuraStepsLeaderboard function
+  const fetchOuraStepsLeaderboard = useCallback(async () => {
     // Get all users from profiles
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
@@ -270,38 +270,237 @@ export const Leaderboard: React.FC = () => {
       .sort((a, b) => b.score - a.score);
 
     setEntries(newEntries);
-  };
+  }, [timeRange]);
 
+  // Memoize the main fetchLeaderboard function
+  const fetchLeaderboard = useCallback(async () => {
+    try {
+      if (scoreType === "totalSteps") {
+        // Fetch Oura steps data
+        await fetchOuraStepsLeaderboard();
+      } else {
+        // Fetch regular activity data
+        await fetchActivityLeaderboard();
+      }
+    } catch (err) {
+      console.error("Error fetching leaderboard:", err);
+      setError("Failed to load leaderboard");
+    }
+  }, [scoreType, timeRange, fetchActivityLeaderboard, fetchOuraStepsLeaderboard]);
+
+  // Update localStorage when scoreType changes
+  useEffect(() => {
+    setStoredScoreType(scoreType);
+  }, [scoreType]);
+
+  // Update localStorage when timeRange changes
+  useEffect(() => {
+    setStoredTimeRange(timeRange);
+  }, [timeRange]);
+
+  // Initial fetch when component mounts or dependencies change
   useEffect(() => {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
 
+  // Trigger initial realtime setup on mount
+  useEffect(() => {
+    // This will trigger the realtime useEffect to run once on mount
+    setRetryTrigger(1);
+  }, []);
+
+  // Mark component as fully initialized after first data fetch
+  useEffect(() => {
+    if (entries.length > 0 || error) {
+      isFullyInitializedRef.current = true;
+    }
+  }, [entries.length, error]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      isFullyInitializedRef.current = false;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+      if (debouncedRetryRef.current) {
+        clearTimeout(debouncedRetryRef.current);
+      }
+      if (currentChannelRef.current) {
+        try {
+          supabase.removeChannel(currentChannelRef.current);
+          // Clean up from global tracker using the current scoreType
+          const currentChannelName = `leaderboard_activities_channel_${scoreType}_${instanceId}`;
+          globalSubscriptionTracker.delete(currentChannelName);
+          currentChannelRef.current = null;
+        } catch (error) {
+          console.error("Error cleaning up channel on unmount:", error);
+        }
+      }
+      isSettingUpRef.current = false;
+    };
+  }, [scoreType, instanceId]);
+
+  // Create a stable reference for the fetch function
   const fetchLeaderboardRef = useRef(fetchLeaderboard);
   useEffect(() => {
     fetchLeaderboardRef.current = fetchLeaderboard;
   }, [fetchLeaderboard]);
 
+  // Memoize the channel name to prevent recreation
+  const channelName = useMemo(() => {
+    return `leaderboard_activities_channel_${scoreType}_${instanceId}`;
+  }, [scoreType, instanceId]);
+
+  // Debounced retry trigger to prevent rapid retries
+  const debouncedRetryRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
-    const channel = supabase
-      .channel("leaderboard_activities_channel")
-      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, (_) => {
-        if (scoreType !== "totalSteps") {
-          fetchLeaderboardRef.current();
+    // Check global subscription tracker first
+    if (globalSubscriptionTracker.has(channelName)) {
+      return;
+    }
+
+    // Only set up channel once on mount, then only when scoreType changes
+    if (hasInitializedRef.current && lastSetupScoreTypeRef.current === scoreType) {
+      return;
+    }
+
+    // If component is fully initialized and we're just switching tabs, don't reinitialize
+    if (isFullyInitializedRef.current && hasInitializedRef.current) {
+      return;
+    }
+
+    // Clear any pending debounced retry
+    if (debouncedRetryRef.current) {
+      clearTimeout(debouncedRetryRef.current);
+      debouncedRetryRef.current = null;
+    }
+
+    const setupChannel = async () => {
+      // Prevent multiple simultaneous setup attempts
+      if (isSettingUpRef.current) {
+        return;
+      }
+
+      // Double-check global tracker before proceeding
+      if (globalSubscriptionTracker.has(channelName)) {
+        isSettingUpRef.current = false;
+        return;
+      }
+
+      isSettingUpRef.current = true;
+
+      try {
+        // For public leaderboard, we don't need authentication to set up realtime
+        // Realtime should work for all users to see live updates
+
+        // Clean up any existing channel first
+        if (currentChannelRef.current) {
+          try {
+            supabase.removeChannel(currentChannelRef.current);
+            globalSubscriptionTracker.delete(channelName);
+          } catch (error) {
+            console.error(`Error cleaning up existing channel:`, error);
+          }
+          currentChannelRef.current = null;
         }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "oura_activities" }, (_) => {
-        if (scoreType === "totalSteps") {
-          fetchLeaderboardRef.current();
+
+        // Small delay to ensure cleanup is complete
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Final check before creating channel
+        if (globalSubscriptionTracker.has(channelName)) {
+          isSettingUpRef.current = false;
+          return;
         }
-      })
-      .subscribe();
+
+        // Mark this channel as being set up globally BEFORE creating it
+        globalSubscriptionTracker.set(channelName, true);
+
+        // Create new channel
+        const channel = supabase
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "activities" },
+            (payload) => {
+              if (scoreType !== "totalSteps") {
+                // Use a timeout to ensure we're calling the latest function
+                setTimeout(() => {
+                  if (isMountedRef.current) {
+                    fetchLeaderboard();
+                  }
+                }, 100);
+              }
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "oura_activities" },
+            (payload) => {
+              if (scoreType === "totalSteps") {
+                // Use a timeout to ensure we're calling the latest function
+                setTimeout(() => {
+                  if (isMountedRef.current) {
+                    fetchLeaderboard();
+                  }
+                }, 100);
+              }
+            }
+          );
+
+        // Subscribe to the channel
+        const subscription = channel.subscribe((status) => {
+          if (!isMountedRef.current) return;
+          setChannelStatus(status);
+          if (status === "CHANNEL_ERROR") {
+            console.error(`Channel ${channelName} encountered an error`);
+            // Remove from global tracker on error
+            globalSubscriptionTracker.delete(channelName);
+            // Debounced retry connection after 5 seconds
+            if (debouncedRetryRef.current) {
+              clearTimeout(debouncedRetryRef.current);
+            }
+            debouncedRetryRef.current = setTimeout(() => {
+              if (isMountedRef.current) {
+                setRetryTrigger((prev) => prev + 1);
+              }
+            }, 5000);
+          }
+        });
+
+        // Store the channel reference
+        currentChannelRef.current = channel;
+        lastSetupScoreTypeRef.current = scoreType;
+        hasInitializedRef.current = true;
+        isSettingUpRef.current = false;
+      } catch (error) {
+        console.error(`Error setting up channel ${channelName}:`, error);
+        setChannelStatus("error");
+        globalSubscriptionTracker.delete(channelName);
+        isSettingUpRef.current = false;
+      }
+    };
+
+    setupChannel();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (currentChannelRef.current && isMountedRef.current) {
+        try {
+          supabase.removeChannel(currentChannelRef.current);
+          globalSubscriptionTracker.delete(channelName);
+          currentChannelRef.current = null;
+        } catch (error) {
+          console.error(`Error cleaning up channel ${channelName}:`, error);
+        }
+      }
+      isSettingUpRef.current = false;
     };
-  }, [scoreType]);
+  }, [scoreType, retryTrigger, channelName]);
 
-  const getScoreLabel = (type: ScoreType) => {
+  const getScoreLabel = useCallback((type: ScoreType) => {
     switch (type) {
       case "totalReps":
         return "Reps";
@@ -312,9 +511,9 @@ export const Leaderboard: React.FC = () => {
       default:
         return "Reps";
     }
-  };
+  }, []);
 
-  const getScoreUnit = (type: ScoreType) => {
+  const getScoreUnit = useCallback((type: ScoreType) => {
     switch (type) {
       case "totalReps":
         return "reps";
@@ -325,19 +524,47 @@ export const Leaderboard: React.FC = () => {
       default:
         return "reps";
     }
-  };
+  }, []);
+
+  const handleScoreTypeChange = useCallback((type: ScoreType) => {
+    setScoreType(type);
+  }, []);
+
+  const handleTimeRangeChange = useCallback((range: "day" | "week" | "month" | "all") => {
+    setTimeRange(range);
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
       <div>
-        <h2 className="text-2xl font-bold mb-6">Leaderboard</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold">Leaderboard</h2>
+          <div className="flex items-center space-x-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                channelStatus === "SUBSCRIBED"
+                  ? "bg-green-500"
+                  : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
+                  ? "bg-red-500"
+                  : "bg-yellow-500"
+              }`}
+            />
+            <span className="text-xs text-gray-500">
+              {channelStatus === "SUBSCRIBED"
+                ? "Live"
+                : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
+                ? "Error"
+                : ""}
+            </span>
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto sm:flex-nowrap justify-between items-center mb-8">
           <div className="flex rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
             <div className="grid grid-cols-3">
               {["totalReps", "totalSets", "totalSteps"].map((type) => (
                 <button
                   key={type}
-                  onClick={() => setScoreType(type as ScoreType)}
+                  onClick={() => handleScoreTypeChange(type as ScoreType)}
                   className={`px-3 py-2 text-sm font-semibold focus:outline-none transition-colors duration-150
                     ${
                       scoreType === type
@@ -359,7 +586,7 @@ export const Leaderboard: React.FC = () => {
               ].map((range) => (
                 <button
                   key={range.value}
-                  onClick={() => setTimeRange(range.value as any)}
+                  onClick={() => handleTimeRangeChange(range.value as any)}
                   className={`px-2 py-1 text-xs font-semibold focus:outline-none transition-colors duration-150
                     ${
                       timeRange === range.value
@@ -431,3 +658,5 @@ export const Leaderboard: React.FC = () => {
     </div>
   );
 };
+
+export const Leaderboard = React.memo(LeaderboardComponent);

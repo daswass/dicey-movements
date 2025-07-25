@@ -13,9 +13,9 @@ import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
 import {
+  fetchPendingFriendRequests,
   getUserLocation,
   updateUserLocation,
-  fetchPendingFriendRequests,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
 
@@ -33,6 +33,9 @@ function App() {
   const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
   const [showFriendRequestNotification, setShowFriendRequestNotification] = useState(false);
+
+  // Add ref to track if we've already fetched the profile for the current user
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   const {
     isTimerActive,
@@ -95,6 +98,12 @@ function App() {
   }, []);
 
   const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
+    // Prevent refetching if we already have the profile for this user
+    if (lastFetchedUserIdRef.current === userId && userProfile?.id === userId) {
+      console.log("App.tsx: Profile already fetched for user:", userId);
+      return;
+    }
+
     setLoadingProfile(true);
     try {
       let { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
@@ -114,6 +123,7 @@ function App() {
 
         if (newProfile && !createError) {
           setUserProfile({ ...newProfile, timer_duration: newProfile.timer_duration || 300 });
+          lastFetchedUserIdRef.current = userId;
           console.log(`App.tsx: Created and set new userProfile: ${JSON.stringify(newProfile)}`);
         } else {
           console.error("App.tsx: Error creating new profile:", createError);
@@ -130,13 +140,13 @@ function App() {
             ...updatedProfile,
             timer_duration: updatedProfile.timer_duration || 300,
           });
-          console.log(
-            `App.tsx: Updated location and set userProfile: ${JSON.stringify(updatedProfile)}`
-          );
+          lastFetchedUserIdRef.current = userId;
+          //console.log(`App.tsx: Updated location and set userProfile: ${JSON.stringify(updatedProfile)}`);
         } catch (locationError) {
           console.error("App.tsx: Error updating location:", locationError);
           // Still set the profile even if location update fails
           setUserProfile({ ...data, timer_duration: data.timer_duration || 300 });
+          lastFetchedUserIdRef.current = userId;
         }
       }
     } catch (e) {

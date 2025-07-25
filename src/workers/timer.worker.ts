@@ -27,7 +27,7 @@ const tick = () => {
   const calculatedTimeLeftSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
 
   self.postMessage({ type: "TICK", timeLeft: calculatedTimeLeftSeconds });
-  console.log(`${logPrefix} Sent TICK message with timeLeft: ${calculatedTimeLeftSeconds}`);
+  //console.log(`${logPrefix} Sent TICK message with timeLeft: ${calculatedTimeLeftSeconds}`);
 
   if (remainingMs <= 0) {
     if (timerTimeout) {

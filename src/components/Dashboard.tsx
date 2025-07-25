@@ -497,6 +497,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           </div>
 
           <div className="col-span-1 space-y-6">
+            {(() => {
+              return null;
+            })()}
             {stableUserProfile && <SocialFeatures userProfile={stableUserProfile} />}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
               <div className="flex justify-between items-center mb-2">

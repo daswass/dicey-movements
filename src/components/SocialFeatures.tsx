@@ -36,8 +36,13 @@ const SocialFeatures: React.FC<SocialFeaturesProps> = ({ userProfile }) => {
         </button>
       </div>
 
-      {activeTab === "leaderboard" && <Leaderboard />}
-      {activeTab === "friends" && <FriendActivity />}
+      {/* Always render both components but control visibility */}
+      <div className={`${activeTab === "leaderboard" ? "block" : "hidden"}`}>
+        <Leaderboard />
+      </div>
+      <div className={`${activeTab === "friends" ? "block" : "hidden"}`}>
+        <FriendActivity />
+      </div>
     </div>
   );
 };
