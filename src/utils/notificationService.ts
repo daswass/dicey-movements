@@ -224,6 +224,7 @@ class NotificationService {
                 type: "timer_expired",
                 title: "⏰ Timer Expired!",
                 body: "Your workout timer has finished! Time to get moving!",
+                timerComplete: true,
               },
             }),
           });

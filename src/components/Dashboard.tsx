@@ -269,9 +269,25 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setTimerComplete,
     ]);
 
+    // Check if app was opened from notification
+    useEffect(() => {
+      const openedFromNotification = sessionStorage.getItem("openedFromNotification");
+      if (openedFromNotification === "true") {
+        sessionStorage.removeItem("openedFromNotification");
+        // Don't auto-start timer if opened from notification
+        return;
+      }
+    }, []);
+
     // useEffect for auto-reset on date change using setInterval
     useEffect(() => {
       const checkAndReset = () => {
+        // Don't auto-reset if opened from notification
+        const openedFromNotification = sessionStorage.getItem("openedFromNotification");
+        if (openedFromNotification === "true") {
+          return;
+        }
+
         if (user && lastSessionStart) {
           const today = new Date();
           const lastSessionDate = new Date(

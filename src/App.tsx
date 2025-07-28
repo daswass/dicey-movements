@@ -120,6 +120,42 @@ function App() {
     initializeNotifications();
   }, []);
 
+  // Listen for timer completion from notification clicks
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "TIMER_COMPLETE_FROM_NOTIFICATION") {
+        setTimerComplete(true);
+        setCurrentWorkoutComplete(true);
+        // Stop the timer and set it to completed state
+        stopWorkerTimer();
+        setTimeLeft(0);
+        setIsTimerActive(false);
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", handleMessage);
+    };
+  }, [setTimerComplete, setCurrentWorkoutComplete, stopWorkerTimer, setTimeLeft, setIsTimerActive]);
+
+  // Check for timer completion from URL parameter (new window case)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("timerComplete") === "true") {
+      setTimerComplete(true);
+      setCurrentWorkoutComplete(true);
+      // Stop the timer and set it to completed state
+      stopWorkerTimer();
+      setTimeLeft(0);
+      setIsTimerActive(false);
+      // Clean up the URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Set a flag to prevent auto-start
+      sessionStorage.setItem("openedFromNotification", "true");
+    }
+  }, [setTimerComplete, setCurrentWorkoutComplete, stopWorkerTimer, setTimeLeft, setIsTimerActive]);
+
   const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
     // Prevent refetching if we already have the profile for this user
     if (lastFetchedUserIdRef.current === userId && userProfile?.id === userId) {
@@ -199,12 +235,19 @@ function App() {
         }
       });
 
+      // Check if we opened from a notification
+      const openedFromNotification = sessionStorage.getItem("openedFromNotification") === "true";
+
       if (
         !isTimerActive &&
         (timeLeft === 0 || timeLeft !== userProfile.timer_duration) &&
-        userProfile.timer_duration > 0
+        userProfile.timer_duration > 0 &&
+        !openedFromNotification
       ) {
         setTimeLeft(userProfile.timer_duration);
+      } else if (openedFromNotification) {
+        // Clear the notification flag
+        sessionStorage.removeItem("openedFromNotification");
       }
     } else {
       if (timeLeft !== 0) {
@@ -398,12 +441,12 @@ function App() {
   }, [isTitleFlashing]);
 
   useEffect(() => {
-    if (timeLeft === 0 && isTimerActive) {
+    if (timeLeft === 0 && isTimerActive && !timerComplete) {
       setTimerComplete(true);
       setIsTimerActive(false);
       setCurrentWorkoutComplete(false);
     }
-  }, [timeLeft, isTimerActive, setIsTimerActive]);
+  }, [timeLeft, isTimerActive, setIsTimerActive, timerComplete]);
 
   useEffect(() => {
     if (timerComplete) {

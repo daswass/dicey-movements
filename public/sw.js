@@ -1,5 +1,5 @@
 // Service Worker for Push Notifications
-const CACHE_NAME = "dicey-movements-v4-" + Date.now();
+const CACHE_NAME = "dicey-movements-v4";
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
@@ -64,16 +64,20 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  // Default action - focus the app
+  // Focus app and send timer completion message
   event.waitUntil(
     clients.matchAll({ type: "window" }).then((clientList) => {
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
-          return client.focus();
+          // Focus existing window and send message
+          client.focus();
+          client.postMessage({ type: "TIMER_COMPLETE_FROM_NOTIFICATION" });
+          return Promise.resolve();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow("/");
+        // Open new window with timer completion parameter
+        return clients.openWindow("/?timerComplete=true");
       }
     })
   );
