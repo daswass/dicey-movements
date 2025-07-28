@@ -52,6 +52,7 @@ build/
 .cache/
 public/
 !public/_redirects
+!public/sw.js
 
 # Docusaurus
 .docusaurus/

@@ -36,8 +36,24 @@ class NotificationService {
 
     try {
       // Register service worker
-      this.registration = await navigator.serviceWorker.register("/sw.js");
+      this.registration = await navigator.serviceWorker.register("/sw.js", {
+        updateViaCache: "none",
+      });
       console.log("NotificationService: Service worker registered:", this.registration);
+
+      // Wait for service worker to be ready
+      await navigator.serviceWorker.ready;
+      console.log("NotificationService: Service worker ready");
+
+      // Force service worker update if needed
+      if (this.registration.waiting) {
+        console.log("NotificationService: Service worker update available, activating...");
+        this.registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      }
+
+      // Force update check
+      await this.registration.update();
+      console.log("NotificationService: Forced service worker update check");
 
       // Listen for service worker updates
       this.registration.addEventListener("updatefound", () => {
@@ -49,6 +65,13 @@ class NotificationService {
             }
           });
         }
+      });
+
+      // Listen for controller change
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        console.log("NotificationService: Service worker controller changed");
+        // Reload the page to ensure we're using the new service worker
+        window.location.reload();
       });
 
       return true;
@@ -186,15 +209,29 @@ class NotificationService {
   }
 
   async sendTimerExpiredNotification(): Promise<void> {
-    await this.sendLocalNotification(
-      "⏰ Timer Expired!",
-      "Your workout timer has finished! Time to get moving!",
-      {
-        tag: "timer-expired",
-        requireInteraction: true,
-        silent: false,
+    // Only send notification if app is in background
+    if (document.hidden) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          await api.fetch("/api/push/send", {
+            method: "POST",
+            body: JSON.stringify({
+              userId: user.id,
+              payload: {
+                type: "timer_expired",
+                title: "⏰ Timer Expired!",
+                body: "Your workout timer has finished! Time to get moving!",
+              },
+            }),
+          });
+        }
+      } catch (error) {
+        console.error("NotificationService: Error sending push notification:", error);
       }
-    );
+    }
   }
 
   // Safari-specific push notification support
@@ -277,6 +314,31 @@ class NotificationService {
     return document.hasFocus();
   }
 
+  // Test method to manually trigger a notification
+  async testNotification(): Promise<void> {
+    console.log("NotificationService: Testing notification manually...");
+    if (this.registration) {
+      try {
+        await this.registration.showNotification("Test Notification", {
+          body: "This is a test notification from the service worker",
+          icon: "/favicon.svg",
+        });
+        console.log("NotificationService: Test notification sent successfully");
+      } catch (error) {
+        console.error("NotificationService: Error sending test notification:", error);
+      }
+    } else {
+      console.error("NotificationService: No service worker registration available");
+    }
+  }
+
+  // Test method to manually trigger push event
+  testPushEvent(): void {
+    if (this.registration?.active) {
+      this.registration.active.postMessage({ type: "TEST_PUSH" });
+    }
+  }
+
   private async saveSubscriptionToBackend(subscription: PushSubscription): Promise<void> {
     try {
       const {
@@ -314,6 +376,12 @@ class NotificationService {
 
 // Create a singleton instance
 export const notificationService = new NotificationService();
+
+// Expose for testing in browser console
+if (typeof window !== "undefined") {
+  (window as any).testNotification = () => notificationService.testNotification();
+  (window as any).testPushEvent = () => notificationService.testPushEvent();
+}
 
 // Export the class for testing
 export { NotificationService };
