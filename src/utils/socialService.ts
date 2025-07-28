@@ -1,5 +1,6 @@
 import { UserProfile, LeaderboardEntry, FriendActivity } from "../types/social";
 import { supabase } from "./supabaseClient";
+import { api } from "./api";
 
 export const getUserLocation = async (): Promise<{
   city: string;
@@ -187,5 +188,58 @@ export const fetchPendingFriendRequests = async (): Promise<number> => {
   } catch (error) {
     console.error("Error in fetchPendingFriendRequests:", error);
     return 0;
+  }
+};
+
+export const sendFriendActivityNotification = async (
+  friendUserId: string,
+  activity: string
+): Promise<void> => {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Get friend's name
+    const { data: friendProfile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", friendUserId)
+      .single();
+
+    if (!friendProfile) return;
+
+    const friendName = `${friendProfile.first_name} ${friendProfile.last_name}`;
+
+    // Send notification to all friends of the user who completed the activity
+    const { data: friends } = await supabase
+      .from("friends")
+      .select("user_id")
+      .eq("friend_id", friendUserId)
+      .eq("status", "accepted");
+
+    if (!friends) return;
+
+    // Send notifications to all friends
+    for (const friend of friends) {
+      try {
+        await api.fetch("/api/push/send", {
+          method: "POST",
+          body: JSON.stringify({
+            userId: friend.user_id,
+            payload: {
+              type: "friend_activity",
+              friendName,
+              activity,
+            },
+          }),
+        });
+      } catch (error) {
+        console.error("Error sending friend activity notification:", error);
+      }
+    }
+  } catch (error) {
+    console.error("Error sending friend activity notification:", error);
   }
 };

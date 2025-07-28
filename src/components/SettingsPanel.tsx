@@ -2,13 +2,17 @@ import React, { useState, useEffect } from "react";
 import { X, Activity, Link, Unlink, CheckCircle, AlertCircle } from "lucide-react";
 import { OuraService, OuraStatus } from "../utils/ouraService";
 import { supabase } from "../utils/supabaseClient";
+import NotificationPermission from "./NotificationPermission";
+import NotificationSettings from "./NotificationSettings";
 
 interface SettingsPanelProps {
   timerDuration: number;
   updateTimerDuration: (newDuration: number) => void;
   notificationsEnabled: boolean;
   updateNotificationsEnabled: (enabled: boolean) => void;
+  userProfile: any; // UserProfile type
   onClose: () => void;
+  onUserProfileUpdate?: (updatedProfile: any) => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -16,7 +20,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   updateTimerDuration,
   notificationsEnabled,
   updateNotificationsEnabled,
+  userProfile,
   onClose,
+  onUserProfileUpdate,
 }) => {
   const [timerValue, setTimerValue] = useState<number>(timerDuration);
   const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
@@ -128,15 +134,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Settings</h2>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-          <X size={20} />
-        </button>
-      </div>
-
       <div className="space-y-6">
         {/* Show Oura message if exists */}
         {ouraMessage && (
@@ -210,6 +207,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-13">
             Receive notifications when your timer is complete
           </p>
+
+          {/* Push Notification Permission */}
+          <div className="mt-4">
+            <NotificationPermission />
+          </div>
+
+          {/* Notification Settings */}
+          {userProfile && (
+            <div className="mt-6">
+              <NotificationSettings userProfile={userProfile} onUpdate={onUserProfileUpdate} />
+            </div>
+          )}
         </div>
 
         {/* Oura Ring Integration Section */}

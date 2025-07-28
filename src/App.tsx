@@ -18,6 +18,7 @@ import {
   updateUserLocation,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
+import { notificationService } from "./utils/notificationService";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
@@ -95,6 +96,28 @@ function App() {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Initialize notification service
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        const initialized = await notificationService.initialize();
+        if (initialized) {
+          // Request permission after initialization
+          const permission = await notificationService.requestPermission();
+
+          // If permission is granted, subscribe to push notifications
+          if (permission.permission === "granted") {
+            await notificationService.subscribeToPushNotifications();
+          }
+        }
+      } catch (error) {
+        console.error("App.tsx: Error initializing notification service:", error);
+      }
+    };
+
+    initializeNotifications();
   }, []);
 
   const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
@@ -252,45 +275,62 @@ function App() {
     }
   }, []);
 
-  const showNotification = useCallback((title: string, body: string) => {
-    if (!("Notification" in window)) {
-      console.warn("App.tsx: This browser does not support desktop notification");
-      return;
-    }
+  const showNotification = useCallback(async (title: string, body: string) => {
+    try {
+      await notificationService.sendLocalNotification(title, body);
+    } catch (error) {
+      console.error("App.tsx: Error showing notification:", error);
 
-    console.log("Current Notification.permission status:", Notification.permission);
+      // Fallback to old notification method
+      if (!("Notification" in window)) {
+        console.warn("App.tsx: This browser does not support desktop notification");
+        return;
+      }
 
-    if (Notification.permission === "granted") {
-      new Notification(title, {
-        body,
-        icon: "/favicon.svg", // Add an icon if you have one
-        requireInteraction: true, // Keep notification until user interacts
-        silent: false, // Allow system sound
-      });
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-          new Notification(title, {
-            body,
-            icon: "/favicon.svg",
-            requireInteraction: true,
-            silent: false,
-          });
-        }
-      });
+      console.log("Current Notification.permission status:", Notification.permission);
+
+      if (Notification.permission === "granted") {
+        new Notification(title, {
+          body,
+          icon: "/favicon.svg",
+          requireInteraction: true,
+          silent: false,
+        });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((permission) => {
+          if (permission === "granted") {
+            new Notification(title, {
+              body,
+              icon: "/favicon.svg",
+              requireInteraction: true,
+              silent: false,
+            });
+          }
+        });
+      }
     }
   }, []);
 
   // Enhanced notification system with multiple attention-grabbing features
-  const notifyTimerExpired = useCallback(() => {
+  const notifyTimerExpired = useCallback(async () => {
     console.log("App.tsx: Timer expired - triggering enhanced notifications");
 
     // 1. Play sound
     playSound();
 
-    // 2. Show desktop notification if tab is hidden
-    if (document.hidden) {
-      showNotification("⏰ Timer Expired!", "Your workout timer has finished! Time to get moving!");
+    // 2. Show push notification (works even when app is in background)
+    try {
+      await notificationService.sendTimerExpiredNotification();
+    } catch (error) {
+      console.error("App.tsx: Error sending push notification:", error);
+
+      // Fallback to desktop notification if tab is hidden
+      if (document.hidden) {
+        await showNotification(
+          "⏰ Timer Expired!",
+          "Your workout timer has finished! Time to get moving!"
+        );
+      }
     }
 
     // 3. Start title flashing

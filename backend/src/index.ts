@@ -1,9 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { OuraService } from "./ouraService";
+import { pushNotificationService } from "./pushNotificationService";
+import { supabase } from "./supabaseClient";
 
 // Load environment variables
 dotenv.config();
@@ -26,20 +27,24 @@ console.log(
 // Initialize Express app
 const app = express();
 
-// Initialize Supabase client with fallbacks for testing
-const supabaseUrl = process.env.SUPABASE_URL || "https://placeholder.supabase.co";
-const supabaseKey = process.env.SUPABASE_ANON_KEY || "placeholder-key";
+// Initialize environment variables
 const ouraWebhookVerificationToken =
   process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
 
-if (!supabaseUrl || !supabaseKey) {
-  console.warn("Warning: Missing Supabase configuration. Some features may not work properly.");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://dicey-movements.netlify.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "http://localhost:4173",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 
 // Rate limiting
@@ -231,6 +236,165 @@ app.get("/api/profile/:userId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching profile:", error);
     res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+// Push Notification Routes
+app.get("/api/push/vapid-public-key", (req, res) => {
+  try {
+    const publicKey = pushNotificationService.getVapidPublicKey();
+    res.json({ publicKey });
+  } catch (error) {
+    console.error("Error getting VAPID public key:", error);
+    res.status(500).json({ error: "Failed to get VAPID public key" });
+  }
+});
+
+app.post("/api/push/subscribe", async (req, res) => {
+  try {
+    const { userId, subscription } = req.body;
+
+    if (!userId || !subscription) {
+      return res.status(400).json({ error: "userId and subscription are required" });
+    }
+
+    const success = await pushNotificationService.saveSubscription(userId, subscription);
+
+    if (success) {
+      res.json({ success: true, message: "Push subscription saved" });
+    } else {
+      res.status(500).json({ error: "Failed to save push subscription" });
+    }
+  } catch (error) {
+    console.error("Error saving push subscription:", error);
+    res.status(500).json({ error: "Failed to save push subscription" });
+  }
+});
+
+app.delete("/api/push/unsubscribe", async (req, res) => {
+  try {
+    const { userId, endpoint } = req.body;
+
+    if (!userId || !endpoint) {
+      return res.status(400).json({ error: "userId and endpoint are required" });
+    }
+
+    const success = await pushNotificationService.removeSubscription(userId, endpoint);
+
+    if (success) {
+      res.json({ success: true, message: "Push subscription removed" });
+    } else {
+      res.status(500).json({ error: "Failed to remove push subscription" });
+    }
+  } catch (error) {
+    console.error("Error removing push subscription:", error);
+    res.status(500).json({ error: "Failed to remove push subscription" });
+  }
+});
+
+app.post("/api/push/send", async (req, res) => {
+  try {
+    const { userId, payload } = req.body;
+
+    if (!userId || !payload) {
+      return res.status(400).json({ error: "userId and payload are required" });
+    }
+
+    let success = false;
+
+    // Handle different notification types
+    if (payload.type === "achievement") {
+      success = await pushNotificationService.sendAchievementNotification(
+        userId,
+        payload.achievementName
+      );
+    } else if (payload.type === "friend_activity") {
+      success = await pushNotificationService.sendFriendActivityNotification(
+        userId,
+        payload.friendName,
+        payload.activity
+      );
+    } else if (payload.type === "friend_request") {
+      success = await pushNotificationService.sendFriendRequestNotification(
+        userId,
+        payload.friendName
+      );
+    } else {
+      // Default to generic notification
+      success = await pushNotificationService.sendNotification(userId, payload);
+    }
+
+    if (success) {
+      res.json({ success: true, message: "Notification sent" });
+    } else {
+      res.status(500).json({ error: "Failed to send notification" });
+    }
+  } catch (error) {
+    console.error("Error sending notification:", error);
+    res.status(500).json({ error: "Failed to send notification" });
+  }
+});
+
+app.put("/api/notifications/settings/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { setting, enabled } = req.body;
+
+    if (!userId || setting === undefined || enabled === undefined) {
+      return res.status(400).json({ error: "userId, setting, and enabled are required" });
+    }
+
+    // Validate setting name
+    const validSettings = ["timer_expired", "achievements", "friend_activity", "friend_requests"];
+    if (!validSettings.includes(setting)) {
+      return res.status(400).json({ error: "Invalid setting name" });
+    }
+
+    // First get current settings
+    console.log("Fetching notification settings for user:", userId);
+    const { data: currentData, error: fetchError } = await supabase
+      .from("profiles")
+      .select("notification_settings")
+      .eq("id", userId)
+      .single();
+
+    if (fetchError) {
+      console.error("Error fetching current notification settings:", fetchError);
+      console.error("Error details:", JSON.stringify(fetchError, null, 2));
+      return res.status(500).json({ error: "Failed to fetch current notification settings" });
+    }
+
+    console.log("Current notification settings:", currentData);
+
+    // Update the specific setting
+    const currentSettings = currentData?.notification_settings || {};
+    const updatedSettings = {
+      ...currentSettings,
+      [setting]: enabled,
+    };
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        notification_settings: updatedSettings,
+      })
+      .eq("id", userId)
+      .select("notification_settings")
+      .single();
+
+    if (error) {
+      console.error("Error updating notification settings:", error);
+      return res.status(500).json({ error: "Failed to update notification settings" });
+    }
+
+    res.json({
+      success: true,
+      message: "Notification setting updated",
+      settings: data.notification_settings,
+    });
+  } catch (error) {
+    console.error("Error updating notification settings:", error);
+    res.status(500).json({ error: "Failed to update notification settings" });
   }
 });
 

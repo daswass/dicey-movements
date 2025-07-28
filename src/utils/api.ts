@@ -1,9 +1,61 @@
 import { UserProfile, LeaderboardEntry, FriendActivity } from "../types/social";
 
-const API_URL = process.env.VITE_API_URL || "http://localhost:3001/api";
+// API configuration for backend endpoints
+const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://dicey-movements-backend.onrender.com";
+
+export const api = {
+  baseUrl: BACKEND_URL,
+
+  // Helper function to make API calls
+  async fetch(endpoint: string, options: RequestInit = {}) {
+    const url = `${this.baseUrl}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+
+  // Specific API methods
+  async getVapidPublicKey() {
+    return this.fetch("/api/push/vapid-public-key");
+  },
+
+  async subscribeToPush(userId: string, subscription: any) {
+    return this.fetch("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ userId, subscription }),
+    });
+  },
+
+  async unsubscribeFromPush(userId: string, endpoint: string) {
+    return this.fetch("/api/push/unsubscribe", {
+      method: "DELETE",
+      body: JSON.stringify({ userId, endpoint }),
+    });
+  },
+
+  async updateNotificationSetting(userId: string, setting: string, enabled: boolean) {
+    return this.fetch(`/api/notifications/settings/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({ setting, enabled }),
+    });
+  },
+};
 
 export const fetchLeaderboard = async (location: string): Promise<LeaderboardEntry[]> => {
-  const response = await fetch(`${API_URL}/leaderboard/${encodeURIComponent(location)}`);
+  const response = await fetch(`${BACKEND_URL}/api/leaderboard/${encodeURIComponent(location)}`);
   if (!response.ok) {
     throw new Error("Failed to fetch leaderboard");
   }
@@ -11,7 +63,7 @@ export const fetchLeaderboard = async (location: string): Promise<LeaderboardEnt
 };
 
 export const fetchUserProfile = async (userId: string): Promise<UserProfile> => {
-  const response = await fetch(`${API_URL}/profile/${userId}`);
+  const response = await fetch(`${BACKEND_URL}/api/profile/${userId}`);
   if (!response.ok) {
     throw new Error("Failed to fetch user profile");
   }
@@ -19,7 +71,7 @@ export const fetchUserProfile = async (userId: string): Promise<UserProfile> => 
 };
 
 export const fetchFriendActivities = async (userId: string): Promise<FriendActivity[]> => {
-  const response = await fetch(`${API_URL}/friends/activity/${userId}`);
+  const response = await fetch(`${BACKEND_URL}/api/friends/activity/${userId}`);
   if (!response.ok) {
     throw new Error("Failed to fetch friend activities");
   }

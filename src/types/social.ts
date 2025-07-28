@@ -1,3 +1,10 @@
+export interface NotificationSettings {
+  timer_expired: boolean;
+  achievements: boolean;
+  friend_activity: boolean;
+  friend_requests: boolean;
+}
+
 export interface UserProfile {
   id: string;
   first_name: string;
@@ -20,6 +27,7 @@ export interface UserProfile {
   friends: string[]; // Array of friend user IDs
   timer_duration: number;
   notifications_enabled: boolean;
+  notification_settings?: NotificationSettings;
 }
 
 export interface LeaderboardEntry {

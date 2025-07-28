@@ -5,6 +5,7 @@ import { ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementService } from "../utils/achievementService";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
+import { sendFriendActivityNotification } from "../utils/socialService";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
@@ -207,6 +208,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           }
         } catch (error) {
           console.error("Error checking achievements:", error);
+        }
+
+        // Send friend activity notification
+        try {
+          const activity = `${latestSession.exercise.name} (${latestSession.reps} reps)`;
+          await sendFriendActivityNotification(user.id, activity);
+        } catch (error) {
+          console.error("Error sending friend activity notification:", error);
         }
       }
 
@@ -614,19 +623,22 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
         {showSettings && stableUserProfile && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full relative">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
               <button
                 onClick={() => setShowSettings(false)}
                 className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
                 &times;
               </button>
-              <h2 className="text-2xl font-bold mb-4">Settings</h2>
               <SettingsPanel
                 timerDuration={stableUserProfile?.timer_duration}
                 updateTimerDuration={updateTimerDuration}
                 notificationsEnabled={notificationsEnabled}
                 updateNotificationsEnabled={updateNotificationsEnabled}
+                userProfile={stableUserProfile}
                 onClose={() => setShowSettings(false)}
+                onUserProfileUpdate={(updatedProfile) => {
+                  setUserProfile(updatedProfile);
+                }}
               />
             </div>
           </div>
