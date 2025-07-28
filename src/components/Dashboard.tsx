@@ -219,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         }
       }
 
-      setCurrentWorkoutComplete(true);
+      setCurrentWorkoutComplete(false);
       setTimerComplete(false);
       onStartTimer();
       setLatestSession(null);

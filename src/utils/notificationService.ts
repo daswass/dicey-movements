@@ -195,6 +195,7 @@ class NotificationService {
       data: {
         url: window.location.href,
         timestamp: Date.now(),
+        group: "dicey-movements", // Group all notifications together
       },
     };
 
@@ -209,29 +210,36 @@ class NotificationService {
   }
 
   async sendTimerExpiredNotification(): Promise<void> {
-    // Only send notification if app is in background
-    if (document.hidden) {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await api.fetch("/api/push/send", {
-            method: "POST",
-            body: JSON.stringify({
-              userId: user.id,
-              payload: {
-                type: "timer_expired",
-                title: "⏰ Timer Expired!",
-                body: "Your workout timer has finished! Time to get moving!",
-                timerComplete: true,
-              },
-            }),
-          });
-        }
-      } catch (error) {
-        console.error("NotificationService: Error sending push notification:", error);
+    console.log(
+      "NotificationService: sendTimerExpiredNotification called, document.hidden:",
+      document.hidden
+    );
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        console.log("NotificationService: User found, sending push notification");
+        await api.fetch("/api/push/send", {
+          method: "POST",
+          body: JSON.stringify({
+            userId: user.id,
+            payload: {
+              type: "timer_expired",
+              title: "⏰ Timer Expired!",
+              body: "Your workout timer has finished! Time to get movin'!",
+              timerComplete: true,
+              group: "dicey-movements",
+            },
+          }),
+        });
+        console.log("NotificationService: Push notification sent successfully");
+      } else {
+        console.log("NotificationService: No user found");
       }
+    } catch (error) {
+      console.error("NotificationService: Error sending push notification:", error);
     }
   }
 
@@ -337,6 +345,69 @@ class NotificationService {
   testPushEvent(): void {
     if (this.registration?.active) {
       this.registration.active.postMessage({ type: "TEST_PUSH" });
+    }
+  }
+
+  // Clear notifications by tag or all notifications
+  async clearNotifications(tag?: string): Promise<void> {
+    if (!this.isSupported || !this.registration) {
+      console.warn(
+        "NotificationService: Cannot clear notifications - not supported or no registration"
+      );
+      return;
+    }
+
+    try {
+      // Get all notifications
+      const notifications = await this.registration.getNotifications();
+
+      // Filter by tag if specified
+      const notificationsToClose = tag
+        ? notifications.filter((notification) => notification.tag === tag)
+        : notifications;
+
+      // Close each notification
+      notificationsToClose.forEach((notification) => notification.close());
+
+      console.log(
+        "NotificationService: Cleared",
+        notificationsToClose.length,
+        "notifications",
+        tag ? `with tag: ${tag}` : ""
+      );
+    } catch (error) {
+      console.error("NotificationService: Error clearing notifications:", error);
+    }
+  }
+
+  // Send a silent push notification to clear notifications on all user devices
+  async sendClearNotificationMessage(tag?: string): Promise<void> {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        await api.fetch("/api/push/send", {
+          method: "POST",
+          body: JSON.stringify({
+            userId: user.id,
+            payload: {
+              type: "clear_notifications",
+              title: "", // Empty title for silent notification
+              body: "", // Empty body for silent notification
+              silent: true, // Standard Web Push Protocol flag for silent notifications
+              tag: tag,
+              clearTag: tag,
+            },
+          }),
+        });
+        console.log(
+          "NotificationService: Silent clear notification message sent",
+          tag ? `for tag: ${tag}` : ""
+        );
+      }
+    } catch (error) {
+      console.error("NotificationService: Error sending clear notification message:", error);
     }
   }
 

@@ -37,6 +37,8 @@ function App() {
 
   // Add ref to track if we've already fetched the profile for the current user
   const lastFetchedUserIdRef = useRef<string | null>(null);
+  // Add ref to track if we've already sent a notification for this timer completion
+  const notificationSentRef = useRef(false);
 
   const {
     isTimerActive,
@@ -289,11 +291,13 @@ function App() {
   const handleStartTimer = useCallback(() => {
     if (!userProfile) return;
     const duration = userProfile.timer_duration;
+    // Reset timeLeft to full duration before starting to prevent immediate completion
+    setTimeLeft(duration);
     startWorkerTimer(duration);
     setIsTimerActive(true);
     setTimerComplete(false);
     setCurrentWorkoutComplete(false);
-  }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive]);
+  }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive, setTimeLeft]);
 
   const playSound = useCallback(() => {
     if (audioRef.current) {
@@ -356,6 +360,16 @@ function App() {
 
   // Enhanced notification system with multiple attention-grabbing features
   const notifyTimerExpired = useCallback(async () => {
+    // Check if we're handling a notification to prevent duplicate notifications
+    const openedFromNotification = sessionStorage.getItem("openedFromNotification") === "true";
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFromNotificationUrl = urlParams.get("timerComplete") === "true";
+
+    if (openedFromNotification || isFromNotificationUrl) {
+      console.log("App.tsx: Skipping notification - handling existing notification");
+      return;
+    }
+
     console.log("App.tsx: Timer expired - triggering enhanced notifications");
 
     // 1. Play sound
@@ -371,7 +385,7 @@ function App() {
       if (document.hidden) {
         await showNotification(
           "⏰ Timer Expired!",
-          "Your workout timer has finished! Time to get moving!"
+          "Your workout timer has finished! Time to get movin'!"
         );
       }
     }
@@ -442,15 +456,19 @@ function App() {
 
   useEffect(() => {
     if (timeLeft === 0 && isTimerActive && !timerComplete) {
+      console.log("App.tsx: Timer completed - setting timerComplete to true");
       setTimerComplete(true);
       setIsTimerActive(false);
       setCurrentWorkoutComplete(false);
+      // Reset notification sent flag for new timer completion
+      notificationSentRef.current = false;
     }
-  }, [timeLeft, isTimerActive, setIsTimerActive, timerComplete]);
+  }, [timeLeft, isTimerActive, timerComplete]);
 
   useEffect(() => {
-    if (timerComplete) {
+    if (timerComplete && !notificationSentRef.current) {
       console.log("App.tsx: Timer has completed! Playing sound and checking for notification.");
+      notificationSentRef.current = true; // Mark notification as sent
       notifyTimerExpired();
     }
   }, [timerComplete, notifyTimerExpired]);

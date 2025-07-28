@@ -26,6 +26,7 @@ export interface NotificationPayload {
   icon?: string;
   badge?: string;
   tag?: string;
+  group?: string;
   requireInteraction?: boolean;
   actions?: Array<{
     action: string;
@@ -163,10 +164,11 @@ class PushNotificationService {
 
     const payload: NotificationPayload = {
       title: "⏰ Timer Expired!",
-      body: "Your workout timer has finished! Time to get moving!",
+      body: "Your workout timer has finished! Time to get movin'!",
       icon: "/favicon.svg",
       badge: "/favicon.svg",
-      tag: "timer-expired",
+      tag: "timer-notification",
+      group: "dicey-movements",
       requireInteraction: true,
       actions: [
         {
@@ -257,7 +259,6 @@ class PushNotificationService {
     // Check if user has friend activity notifications enabled
     const settings = await this.getUserNotificationSettings(userId);
     if (!settings.friend_activity) {
-      console.log(`Friend activity notifications disabled for user ${userId}`);
       return false;
     }
 

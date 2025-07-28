@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { getExerciseById } from "../data/exercises";
 import { DiceRoll, ExerciseMultipliers, WorkoutSession } from "../types";
 import Dice from "./Dice"; // 1. Import the Dice component
+import { notificationService } from "../utils/notificationService";
 
 interface DiceRollerProps {
   onRollComplete: (session: WorkoutSession) => void;
@@ -28,6 +29,9 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   }, [session]);
 
   const rollDice = useCallback(() => {
+    // Send clear message to all user devices when starting a new workout
+    notificationService.sendClearNotificationMessage("timer-notification");
+
     setIsRolling(true);
     const animationDuration = 1500;
     const frames = 15;
