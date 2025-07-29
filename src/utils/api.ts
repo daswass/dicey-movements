@@ -52,6 +52,13 @@ export const api = {
       body: JSON.stringify({ setting, enabled }),
     });
   },
+
+  async completeWorkout(userId: string, exercise: string, reps: number, multipliers?: any) {
+    return this.fetch("/api/workout/complete", {
+      method: "POST",
+      body: JSON.stringify({ userId, exercise, reps, multipliers }),
+    });
+  },
 };
 
 export const fetchLeaderboard = async (location: string): Promise<LeaderboardEntry[]> => {

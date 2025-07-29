@@ -4,8 +4,8 @@ import { getExerciseById } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementService } from "../utils/achievementService";
+import { api } from "../utils/api";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
-import { sendFriendActivityNotification } from "../utils/socialService";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
@@ -212,10 +212,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
         // Send friend activity notification
         try {
-          const activity = `${latestSession.exercise.name} (${latestSession.reps} reps)`;
-          await sendFriendActivityNotification(user.id, activity);
+          await api.completeWorkout(
+            user.id,
+            latestSession.exercise.name,
+            latestSession.reps,
+            multipliers
+          );
         } catch (error) {
-          console.error("Error sending friend activity notification:", error);
+          console.error("Error completing workout:", error);
         }
       }
 

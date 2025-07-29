@@ -335,6 +335,116 @@ app.post("/api/push/send", async (req, res) => {
   }
 });
 
+app.post("/api/workout/complete", async (req, res) => {
+  try {
+    const { userId, exercise, reps, multipliers } = req.body;
+
+    if (!userId || !exercise || !reps) {
+      return res.status(400).json({ error: "userId, exercise, and reps are required" });
+    }
+
+    // Get user's profile to check notification settings
+    const { data: userProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("notification_settings, first_name, last_name")
+      .eq("id", userId)
+      .single();
+
+    if (profileError) {
+      console.error("Error fetching user profile:", profileError);
+      return res.status(500).json({ error: "Failed to fetch user profile" });
+    }
+
+    const userName = `${userProfile.first_name} ${userProfile.last_name}`;
+    const activity = `${exercise} (${reps} reps)`;
+
+    // Get user's friends
+    const { data: friends, error: friendsError } = await supabase
+      .from("friends")
+      .select("user_id")
+      .eq("friend_id", userId)
+      .eq("status", "accepted");
+
+    if (friendsError) {
+      console.error("Error fetching friends:", friendsError);
+      return res.status(500).json({ error: "Failed to fetch friends" });
+    }
+
+    // Get notification settings for all friends to filter those with friend_activity enabled
+    const friendIds = friends.map((friend) => friend.user_id);
+    const { data: friendProfiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, notification_settings")
+      .in("id", friendIds);
+
+    if (profilesError) {
+      console.error("Error fetching friend profiles:", profilesError);
+      return res.status(500).json({ error: "Failed to fetch friend profiles" });
+    }
+
+    // Filter friends who have friend_activity notifications enabled
+    const friendsWithNotificationsEnabled = friendProfiles.filter((profile) => {
+      const settings = profile.notification_settings || {};
+      return settings.friend_activity === true;
+    });
+
+    console.log(
+      `Found ${friendsWithNotificationsEnabled.length} friends with friend activity notifications enabled out of ${friends.length} total friends`
+    );
+
+    // Return early if no friends have notifications enabled
+    if (friendsWithNotificationsEnabled.length === 0) {
+      console.log(
+        "No friends have friend activity notifications enabled, skipping notification sending"
+      );
+      return res.json({
+        success: true,
+        message:
+          "Workout completed (no notifications sent - no friends have notifications enabled)",
+        notifications: {
+          sent: 0,
+          failed: 0,
+        },
+      });
+    }
+
+    // Send friend activity notifications to friends with notifications enabled
+    const notificationPromises = friendsWithNotificationsEnabled.map(async (friend) => {
+      try {
+        const success = await pushNotificationService.sendFriendActivityNotification(
+          friend.id,
+          userName,
+          activity
+        );
+        return { userId: friend.id, success };
+      } catch (error) {
+        console.error(`Error sending notification to friend ${friend.id}:`, error);
+        return { userId: friend.id, success: false };
+      }
+    });
+
+    const results = await Promise.allSettled(notificationPromises);
+    const successful = results.filter(
+      (result) => result.status === "fulfilled" && result.value.success
+    ).length;
+    const failed = results.length - successful;
+
+    console.log(`Friend activity notifications sent: ${successful} successful, ${failed} failed`);
+
+    res.json({
+      success: true,
+      message: "Workout completed and notifications sent",
+      notifications: {
+        sent: successful,
+        failed: failed,
+      },
+    });
+  } catch (error) {
+    console.error("Error completing workout:", error);
+    res.status(500).json({ error: "Failed to complete workout" });
+  }
+});
+
 app.put("/api/notifications/settings/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
