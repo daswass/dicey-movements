@@ -46,6 +46,13 @@ export const api = {
     });
   },
 
+  async updateSubscriptionActivity(userId: string, deviceId: string) {
+    return this.fetch("/api/push/activity", {
+      method: "PUT",
+      body: JSON.stringify({ userId, deviceId }),
+    });
+  },
+
   async updateNotificationSetting(userId: string, setting: string, enabled: boolean) {
     return this.fetch(`/api/notifications/settings/${userId}`, {
       method: "PUT",

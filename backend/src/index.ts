@@ -292,6 +292,27 @@ app.delete("/api/push/unsubscribe", async (req, res) => {
   }
 });
 
+app.put("/api/push/activity", async (req, res) => {
+  try {
+    const { userId, deviceId } = req.body;
+
+    if (!userId || !deviceId) {
+      return res.status(400).json({ error: "userId and deviceId are required" });
+    }
+
+    const success = await pushNotificationService.updateSubscriptionActivity(userId, deviceId);
+
+    if (success) {
+      res.json({ success: true, message: "Subscription activity updated" });
+    } else {
+      res.status(500).json({ error: "Failed to update subscription activity" });
+    }
+  } catch (error) {
+    console.error("Error updating subscription activity:", error);
+    res.status(500).json({ error: "Failed to update subscription activity" });
+  }
+});
+
 app.post("/api/push/send", async (req, res) => {
   try {
     const { userId, payload } = req.body;
@@ -319,9 +340,7 @@ app.post("/api/push/send", async (req, res) => {
       };
       success = await pushNotificationService.sendNotification(userId, clearPayload);
     } else if (payload.type === "timer_expired") {
-      console.log("Backend: Processing timer_expired notification for user:", userId);
       success = await pushNotificationService.sendTimerExpiredNotification(userId);
-      console.log("Backend: Timer expired notification result:", success);
     } else if (payload.type === "achievement") {
       success = await pushNotificationService.sendAchievementNotification(
         userId,

@@ -1,5 +1,5 @@
-import { supabase } from "./supabaseClient";
 import { api } from "./api";
+import { supabase } from "./supabaseClient";
 
 // Notification Service for Desktop and Safari Push Notifications
 export interface NotificationPermission {
@@ -13,19 +13,86 @@ export interface PushSubscription {
     p256dh: string;
     auth: string;
   };
+  deviceId?: string;
+  deviceType?: string;
+  browser?: string;
+  platform?: string;
 }
 
 class NotificationService {
   private registration: ServiceWorkerRegistration | null = null;
   private isSupported: boolean = false;
+  private deviceId: string | null = null;
 
   constructor() {
     this.checkSupport();
+    this.generateDeviceId();
   }
 
   private checkSupport(): void {
     this.isSupported = "serviceWorker" in navigator && "PushManager" in window;
-    console.log("NotificationService: Push notifications supported:", this.isSupported);
+  }
+
+  // Generate a unique device ID based on browser fingerprint
+  private generateDeviceId(): void {
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      ctx?.fillText("Device fingerprint", 10, 10);
+      const fingerprint = canvas.toDataURL();
+
+      // Create a hash from browser characteristics
+      const characteristics = [
+        navigator.userAgent,
+        navigator.language,
+        screen.width + "x" + screen.height,
+        new Date().getTimezoneOffset(),
+        fingerprint,
+      ].join("|");
+
+      // Simple hash function
+      let hash = 0;
+      for (let i = 0; i < characteristics.length; i++) {
+        const char = characteristics.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+
+      this.deviceId = Math.abs(hash).toString(36);
+    } catch (error) {
+      console.error("NotificationService: Error generating device ID:", error);
+      this.deviceId = "unknown";
+    }
+  }
+
+  // Detect device type and browser
+  private getDeviceInfo(): { deviceType: string; browser: string; platform: string } {
+    const userAgent = navigator.userAgent;
+    let deviceType = "desktop";
+    let browser = "unknown";
+    let platform = "unknown";
+
+    // Detect device type
+    if (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)) {
+      deviceType = "mobile";
+    } else if (/iPad|Android.*Tablet/i.test(userAgent)) {
+      deviceType = "tablet";
+    }
+
+    // Detect browser
+    if (userAgent.includes("Chrome")) browser = "chrome";
+    else if (userAgent.includes("Firefox")) browser = "firefox";
+    else if (userAgent.includes("Safari")) browser = "safari";
+    else if (userAgent.includes("Edge")) browser = "edge";
+
+    // Detect platform
+    if (userAgent.includes("Windows")) platform = "windows";
+    else if (userAgent.includes("Mac")) platform = "macos";
+    else if (userAgent.includes("Linux")) platform = "linux";
+    else if (userAgent.includes("Android")) platform = "android";
+    else if (userAgent.includes("iOS")) platform = "ios";
+
+    return { deviceType, browser, platform };
   }
 
   async initialize(): Promise<boolean> {
@@ -39,21 +106,17 @@ class NotificationService {
       this.registration = await navigator.serviceWorker.register("/sw.js", {
         updateViaCache: "none",
       });
-      console.log("NotificationService: Service worker registered:", this.registration);
 
       // Wait for service worker to be ready
       await navigator.serviceWorker.ready;
-      console.log("NotificationService: Service worker ready");
 
       // Force service worker update if needed
       if (this.registration.waiting) {
-        console.log("NotificationService: Service worker update available, activating...");
         this.registration.waiting.postMessage({ type: "SKIP_WAITING" });
       }
 
       // Force update check
       await this.registration.update();
-      console.log("NotificationService: Forced service worker update check");
 
       // Listen for service worker updates
       this.registration.addEventListener("updatefound", () => {
@@ -70,14 +133,83 @@ class NotificationService {
       // Listen for controller change
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         console.log("NotificationService: Service worker controller changed");
-        // Reload the page to ensure we're using the new service worker
-        window.location.reload();
+        // Force subscription refresh when service worker changes
+        this.handleServiceWorkerChange();
       });
+
+      // Check if this is a fresh app launch (like after re-adding to home screen)
+      this.checkForFreshLaunch();
 
       return true;
     } catch (error) {
       console.error("NotificationService: Failed to register service worker:", error);
       return false;
+    }
+  }
+
+  // Check if this is a fresh launch and force subscription refresh if needed
+  private async checkForFreshLaunch(): Promise<void> {
+    try {
+      // Check if we have a stored device ID
+      const storedDeviceId = localStorage.getItem("notification_device_id");
+
+      if (!storedDeviceId || storedDeviceId !== this.deviceId) {
+        console.log("NotificationService: Fresh launch detected, forcing subscription refresh");
+
+        // Store the new device ID
+        localStorage.setItem("notification_device_id", this.deviceId || "");
+
+        // Force subscription refresh
+        await this.forceRefreshSubscription();
+      }
+    } catch (error) {
+      console.error("NotificationService: Error checking for fresh launch:", error);
+    }
+  }
+
+  // Handle service worker changes (like home screen re-add)
+  private async handleServiceWorkerChange(): Promise<void> {
+    console.log("NotificationService: Handling service worker change...");
+
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+
+      if (registration) {
+        this.registration = registration;
+        await this.forceRefreshSubscription();
+      }
+    } catch (error) {
+      console.error("NotificationService: Error handling service worker change:", error);
+    }
+  }
+
+  // Force refresh subscription (unsubscribe and resubscribe)
+  private async forceRefreshSubscription(): Promise<void> {
+    console.log("NotificationService: Force refreshing subscription...");
+    try {
+      // First unsubscribe from existing subscription
+      console.log("NotificationService: Unsubscribing from existing subscription...");
+      await this.unsubscribeFromPushNotifications();
+
+      // Wait a moment for cleanup
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Subscribe again with new device info (force mode)
+      console.log("NotificationService: Creating new subscription...");
+      const newSubscription = await this.subscribeToPushNotifications(true);
+
+      if (newSubscription) {
+        console.log(
+          "NotificationService: New subscription created successfully:",
+          newSubscription.deviceId
+        );
+      } else {
+        console.log("NotificationService: Failed to create new subscription");
+      }
+
+      console.log("NotificationService: Subscription force refreshed");
+    } catch (error) {
+      console.error("NotificationService: Error force refreshing subscription:", error);
     }
   }
 
@@ -88,7 +220,16 @@ class NotificationService {
 
     try {
       const permission = await Notification.requestPermission();
-      console.log("NotificationService: Permission result:", permission);
+
+      if (permission === "granted") {
+        const storedEndpoint = localStorage.getItem("notification_endpoint");
+        const currentSubscription = await this.registration?.pushManager.getSubscription();
+
+        if (!storedEndpoint || !currentSubscription) {
+          await this.forceRefreshSubscription();
+        }
+      }
+
       return { permission, supported: true };
     } catch (error) {
       console.error("NotificationService: Error requesting permission:", error);
@@ -104,25 +245,32 @@ class NotificationService {
     return { permission: Notification.permission, supported: true };
   }
 
-  async subscribeToPushNotifications(): Promise<PushSubscription | null> {
+  async subscribeToPushNotifications(force: boolean = false): Promise<PushSubscription | null> {
     if (!this.registration || !this.isSupported) {
       console.warn("NotificationService: Cannot subscribe - no registration or not supported");
       return null;
     }
 
     try {
-      // Check if already subscribed
-      const existingSubscription = await this.registration.pushManager.getSubscription();
-      if (existingSubscription) {
-        console.log("NotificationService: Already subscribed to push notifications");
-        return this.convertSubscription(existingSubscription);
+      // Check if already subscribed (unless forcing)
+      if (!force) {
+        const existingSubscription = await this.registration.pushManager.getSubscription();
+        if (existingSubscription) {
+          return this.convertSubscription(existingSubscription);
+        }
+      } else {
+        console.log("NotificationService: Force mode - skipping existing subscription check");
       }
 
-      // Request permission if not granted
-      const permission = await this.requestPermission();
-      if (permission.permission !== "granted") {
-        console.warn("NotificationService: Permission not granted for push notifications");
-        return null;
+      // Request permission if not granted (unless forcing)
+      if (!force) {
+        const permission = await this.requestPermission();
+        if (permission.permission !== "granted") {
+          console.warn("NotificationService: Permission not granted for push notifications");
+          return null;
+        }
+      } else {
+        console.log("NotificationService: Force mode - skipping permission check");
       }
 
       // Subscribe to push notifications
@@ -139,6 +287,9 @@ class NotificationService {
       // Save subscription to backend
       const convertedSubscription = this.convertSubscription(subscription);
       await this.saveSubscriptionToBackend(convertedSubscription);
+
+      // Store endpoint for tracking
+      localStorage.setItem("notification_endpoint", subscription.endpoint);
 
       return convertedSubscription;
     } catch (error) {
@@ -296,6 +447,7 @@ class NotificationService {
   }
 
   private convertSubscription(subscription: globalThis.PushSubscription): PushSubscription {
+    const deviceInfo = this.getDeviceInfo();
     return {
       endpoint: subscription.endpoint,
       keys: {
@@ -309,6 +461,10 @@ class NotificationService {
           String.fromCharCode.apply(null, Array.from(new Uint8Array(subscription.getKey("auth")!)))
         ),
       },
+      deviceId: this.deviceId || "unknown",
+      deviceType: deviceInfo.deviceType,
+      browser: deviceInfo.browser,
+      platform: deviceInfo.platform,
     };
   }
 
@@ -345,68 +501,35 @@ class NotificationService {
     return document.hasFocus();
   }
 
-  // Test method to manually trigger a notification
-  async testNotification(): Promise<void> {
-    console.log("NotificationService: Testing notification manually...");
-    if (this.registration) {
-      try {
-        await this.registration.showNotification("Test Notification", {
-          body: "This is a test notification from the service worker",
-          icon: "/favicon.svg",
-          tag: "test-notification",
-        });
-        console.log("NotificationService: Test notification sent successfully");
-      } catch (error) {
-        console.error("NotificationService: Error sending test notification:", error);
-      }
-    } else {
-      console.error("NotificationService: No service worker registration available");
-    }
-  }
-
-  // Test method to manually trigger push event
-  testPushEvent(): void {
-    if (this.registration?.active) {
-      this.registration.active.postMessage({ type: "TEST_PUSH" });
-    }
-  }
-
-  // Test method to manually clear notifications
-  async testClearNotifications(): Promise<void> {
-    console.log("NotificationService: Testing notification clearing...");
-    await this.clearNotifications("timer-notification");
-    await this.sendClearNotificationMessage("timer-notification");
-  }
-
-  // Test method to manually create a notification with proper tag
-  async testCreateNotificationWithTag(): Promise<void> {
+  // Clear notifications by tag or all notifications
+  async clearNotifications(tag?: string): Promise<void> {
     if (!this.isSupported || !this.registration) {
-      console.warn("NotificationService: Cannot create test notification - not supported");
+      console.warn(
+        "NotificationService: Cannot clear notifications - not supported or no registration"
+      );
       return;
     }
 
     try {
-      const notification = new Notification("Test Timer Notification", {
-        body: "This is a test notification with proper tag",
-        icon: "/favicon.svg",
-        badge: "/favicon.svg",
-        tag: "timer-notification",
-        requireInteraction: true,
-        data: {
-          type: "test",
-          timestamp: Date.now(),
-        },
-      });
+      // Get all notifications
+      const notifications = await this.registration.getNotifications();
 
-      console.log("NotificationService: Test notification created with tag: timer-notification");
+      // Filter by tag if specified
+      const notificationsToClose = tag
+        ? notifications.filter((notification) => notification.tag === tag)
+        : notifications;
 
-      // Auto-close after 5 seconds
-      setTimeout(() => {
-        notification.close();
-        console.log("NotificationService: Test notification closed");
-      }, 5000);
+      // Close each notification
+      notificationsToClose.forEach((notification) => notification.close());
+
+      console.log(
+        "NotificationService: Cleared",
+        notificationsToClose.length,
+        "notifications",
+        tag ? `with tag: ${tag}` : ""
+      );
     } catch (error) {
-      console.error("NotificationService: Error creating test notification:", error);
+      console.error("NotificationService: Error clearing notifications:", error);
     }
   }
 
@@ -419,7 +542,6 @@ class NotificationService {
 
     try {
       const notifications = await this.registration.getNotifications();
-      console.log("NotificationService: Clearing all", notifications.length, "notifications");
 
       notifications.forEach((notification) => {
         console.log(
@@ -434,53 +556,6 @@ class NotificationService {
       console.log("NotificationService: All notifications cleared");
     } catch (error) {
       console.error("NotificationService: Error clearing all notifications:", error);
-    }
-  }
-
-  // Clear notifications by tag or all notifications
-  async clearNotifications(tag?: string): Promise<void> {
-    if (!this.isSupported || !this.registration) {
-      console.warn(
-        "NotificationService: Cannot clear notifications - not supported or no registration"
-      );
-      return;
-    }
-
-    try {
-      // Get all notifications
-      const notifications = await this.registration.getNotifications();
-      console.log("NotificationService: Found", notifications.length, "total notifications");
-
-      // Log all notification tags for debugging
-      notifications.forEach((notification, index) => {
-        console.log(
-          `NotificationService: Notification ${index}: tag="${notification.tag}", title="${notification.title}"`
-        );
-      });
-
-      // Filter by tag if specified
-      const notificationsToClose = tag
-        ? notifications.filter((notification) => notification.tag === tag)
-        : notifications;
-
-      console.log(
-        "NotificationService: Found",
-        notificationsToClose.length,
-        "notifications to close",
-        tag ? `with tag: ${tag}` : ""
-      );
-
-      // Close each notification
-      notificationsToClose.forEach((notification) => notification.close());
-
-      console.log(
-        "NotificationService: Cleared",
-        notificationsToClose.length,
-        "notifications",
-        tag ? `with tag: ${tag}` : ""
-      );
-    } catch (error) {
-      console.error("NotificationService: Error clearing notifications:", error);
     }
   }
 
@@ -551,24 +626,34 @@ class NotificationService {
       console.error("NotificationService: Error removing subscription from backend:", error);
     }
   }
+
+  // Method to update subscription activity
+  async updateSubscriptionActivity(): Promise<void> {
+    if (!this.deviceId) {
+      console.warn("NotificationService: No device ID available");
+      return;
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn("NotificationService: No authenticated user found");
+        return;
+      }
+
+      // Call backend to update activity
+      await api.updateSubscriptionActivity(user.id, this.deviceId);
+      console.log("NotificationService: Subscription activity updated");
+    } catch (error) {
+      console.error("NotificationService: Error updating subscription activity:", error);
+    }
+  }
 }
 
 // Create a singleton instance
 export const notificationService = new NotificationService();
-
-// Expose test methods globally for debugging
-(window as any).testNotification = () => notificationService.testNotification();
-(window as any).testPushEvent = () => notificationService.testPushEvent();
-(window as any).testClearNotifications = () => notificationService.testClearNotifications();
-(window as any).testCreateNotificationWithTag = () =>
-  notificationService.testCreateNotificationWithTag();
-(window as any).clearAllNotifications = () => notificationService.clearAllNotifications();
-
-// Add a global function to clear all notifications immediately
-(window as any).clearAllNotificationsNow = () => {
-  console.log("Clearing all notifications immediately...");
-  notificationService.clearAllNotifications();
-};
 
 // Export the class for testing
 export { NotificationService };

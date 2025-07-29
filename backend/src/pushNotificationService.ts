@@ -18,6 +18,10 @@ export interface PushSubscription {
     p256dh: string;
     auth: string;
   };
+  deviceId?: string;
+  deviceType?: string;
+  browser?: string;
+  platform?: string;
 }
 
 export interface NotificationPayload {
@@ -39,12 +43,21 @@ export interface NotificationPayload {
 class PushNotificationService {
   async saveSubscription(userId: string, subscription: PushSubscription): Promise<boolean> {
     try {
-      const { error } = await supabase.from("push_subscriptions").upsert({
-        user_id: userId,
-        endpoint: subscription.endpoint,
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-        created_at: new Date().toISOString(),
+      const deviceId = subscription.deviceId || "unknown";
+      const deviceType = subscription.deviceType || "unknown";
+      const browser = subscription.browser || "unknown";
+      const platform = subscription.platform || "unknown";
+
+      // Use a raw SQL upsert to ensure atomicity
+      const { error } = await supabase.rpc("upsert_push_subscription", {
+        p_user_id: userId,
+        p_endpoint: subscription.endpoint,
+        p_p256dh: subscription.keys.p256dh,
+        p_auth: subscription.keys.auth,
+        p_device_id: deviceId,
+        p_device_type: deviceType,
+        p_browser: browser,
+        p_platform: platform,
       });
 
       if (error) {
@@ -52,7 +65,6 @@ class PushNotificationService {
         return false;
       }
 
-      console.log("Push subscription saved for user:", userId);
       return true;
     } catch (error) {
       console.error("Error saving push subscription:", error);
@@ -77,6 +89,45 @@ class PushNotificationService {
       return true;
     } catch (error) {
       console.error("Error removing push subscription:", error);
+      return false;
+    }
+  }
+
+  async markSubscriptionInactive(userId: string, deviceId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase.rpc("mark_subscription_inactive", {
+        user_id: userId,
+        device_id: deviceId,
+      });
+
+      if (error) {
+        console.error("Error marking subscription inactive:", error);
+        return false;
+      }
+
+      console.log("Subscription marked inactive for user:", userId, "device:", deviceId);
+      return true;
+    } catch (error) {
+      console.error("Error marking subscription inactive:", error);
+      return false;
+    }
+  }
+
+  async updateSubscriptionActivity(userId: string, deviceId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase.rpc("update_subscription_activity", {
+        user_id: userId,
+        device_id: deviceId,
+      });
+
+      if (error) {
+        console.error("Error updating subscription activity:", error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error updating subscription activity:", error);
       return false;
     }
   }
@@ -132,10 +183,6 @@ class PushNotificationService {
         },
       };
 
-      console.log(
-        "PushNotificationService: Sending payload to subscription:",
-        JSON.stringify(payload)
-      );
       const result = await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
 
       if (result.statusCode === 410) {
@@ -159,18 +206,12 @@ class PushNotificationService {
   }
 
   async sendTimerExpiredNotification(userId: string): Promise<boolean> {
-    console.log("PushNotificationService: sendTimerExpiredNotification called for user:", userId);
-
     // Check if user has timer expired notifications enabled
     const settings = await this.getUserNotificationSettings(userId);
     if (!settings.timer_expired) {
       console.log(`Timer expired notifications disabled for user ${userId}`);
       return false;
     }
-
-    console.log(
-      "PushNotificationService: Timer expired notifications enabled, sending notification"
-    );
 
     const payload: NotificationPayload = {
       title: "⏰ Timer Expired!",
@@ -198,7 +239,6 @@ class PushNotificationService {
     };
 
     const result = await this.sendNotification(userId, payload);
-    console.log("PushNotificationService: Timer expired notification sent, result:", result);
     return result;
   }
 

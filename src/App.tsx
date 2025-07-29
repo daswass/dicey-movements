@@ -12,13 +12,13 @@ import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
+import { notificationService } from "./utils/notificationService";
 import {
   fetchPendingFriendRequests,
   getUserLocation,
   updateUserLocation,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
-import { notificationService } from "./utils/notificationService";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
@@ -383,8 +383,6 @@ function App() {
       console.log("App.tsx: Skipping notification - handling existing notification");
       return;
     }
-
-    console.log("App.tsx: Timer expired - triggering enhanced notifications");
 
     // 1. Play sound
     playSound();

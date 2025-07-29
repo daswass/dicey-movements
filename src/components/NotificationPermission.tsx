@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle, XCircle } from "lucide-react";
-import { notificationService, NotificationPermission } from "../utils/notificationService";
+import React, { useEffect, useState } from "react";
+import type { NotificationPermission } from "../utils/notificationService";
+import { notificationService } from "../utils/notificationService";
 
 interface NotificationPermissionProps {
   onPermissionChange?: (permission: NotificationPermission) => void;
@@ -24,7 +25,7 @@ const NotificationPermission: React.FC<NotificationPermissionProps> = ({
 
   const initializeNotificationService = async () => {
     try {
-      const initialized = await notificationService.initialize();
+      await notificationService.initialize();
       const currentPermission = await notificationService.getPermissionStatus();
 
       setPermission(currentPermission);

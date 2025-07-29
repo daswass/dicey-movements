@@ -23,7 +23,6 @@ export const TimerWorkerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     if (!workerRef.current) {
       workerRef.current = new Worker(new URL("../workers/timer.worker.ts", import.meta.url));
-      console.log("Timer Worker initialized in context.");
 
       workerRef.current.onmessage = (event) => {
         const { type, timeLeft: workerTimeLeft } = event.data;

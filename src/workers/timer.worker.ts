@@ -3,8 +3,6 @@ let startTime: number | null = null; // Timestamp when the current 'segment' of 
 let totalDurationMs: number = 0; // The total duration for the *entire* countdown in milliseconds
 let elapsedAtPauseMs: number = 0; // Milliseconds that had elapsed when the timer was paused
 
-console.log("Worker initialized.");
-
 // Function to handle the actual ticking logic
 const tick = () => {
   const logPrefix = "WORKER - TICK:";
