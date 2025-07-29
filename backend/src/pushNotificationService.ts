@@ -132,6 +132,10 @@ class PushNotificationService {
         },
       };
 
+      console.log(
+        "PushNotificationService: Sending payload to subscription:",
+        JSON.stringify(payload)
+      );
       const result = await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
 
       if (result.statusCode === 410) {
@@ -155,12 +159,18 @@ class PushNotificationService {
   }
 
   async sendTimerExpiredNotification(userId: string): Promise<boolean> {
+    console.log("PushNotificationService: sendTimerExpiredNotification called for user:", userId);
+
     // Check if user has timer expired notifications enabled
     const settings = await this.getUserNotificationSettings(userId);
     if (!settings.timer_expired) {
       console.log(`Timer expired notifications disabled for user ${userId}`);
       return false;
     }
+
+    console.log(
+      "PushNotificationService: Timer expired notifications enabled, sending notification"
+    );
 
     const payload: NotificationPayload = {
       title: "⏰ Timer Expired!",
@@ -187,7 +197,9 @@ class PushNotificationService {
       },
     };
 
-    return this.sendNotification(userId, payload);
+    const result = await this.sendNotification(userId, payload);
+    console.log("PushNotificationService: Timer expired notification sent, result:", result);
+    return result;
   }
 
   async sendAchievementNotification(userId: string, achievementName: string): Promise<boolean> {

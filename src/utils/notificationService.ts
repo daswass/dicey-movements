@@ -220,7 +220,10 @@ class NotificationService {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        console.log("NotificationService: User found, sending push notification");
+        console.log(
+          "NotificationService: User found, sending push notification for user:",
+          user.id
+        );
         await api.fetch("/api/push/send", {
           method: "POST",
           body: JSON.stringify({
@@ -229,8 +232,27 @@ class NotificationService {
               type: "timer_expired",
               title: "⏰ Timer Expired!",
               body: "Your workout timer has finished! Time to get movin'!",
-              timerComplete: true,
+              icon: "/favicon.svg",
+              badge: "/favicon.svg",
+              tag: "timer-notification",
               group: "dicey-movements",
+              requireInteraction: true,
+              actions: [
+                {
+                  action: "start-workout",
+                  title: "Start Workout",
+                  icon: "/favicon.svg",
+                },
+                {
+                  action: "dismiss",
+                  title: "Dismiss",
+                },
+              ],
+              data: {
+                url: "/",
+                timestamp: Date.now(),
+                type: "timer_expired",
+              },
             },
           }),
         });
@@ -331,6 +353,7 @@ class NotificationService {
         await this.registration.showNotification("Test Notification", {
           body: "This is a test notification from the service worker",
           icon: "/favicon.svg",
+          tag: "test-notification",
         });
         console.log("NotificationService: Test notification sent successfully");
       } catch (error) {
@@ -348,6 +371,72 @@ class NotificationService {
     }
   }
 
+  // Test method to manually clear notifications
+  async testClearNotifications(): Promise<void> {
+    console.log("NotificationService: Testing notification clearing...");
+    await this.clearNotifications("timer-notification");
+    await this.sendClearNotificationMessage("timer-notification");
+  }
+
+  // Test method to manually create a notification with proper tag
+  async testCreateNotificationWithTag(): Promise<void> {
+    if (!this.isSupported || !this.registration) {
+      console.warn("NotificationService: Cannot create test notification - not supported");
+      return;
+    }
+
+    try {
+      const notification = new Notification("Test Timer Notification", {
+        body: "This is a test notification with proper tag",
+        icon: "/favicon.svg",
+        badge: "/favicon.svg",
+        tag: "timer-notification",
+        requireInteraction: true,
+        data: {
+          type: "test",
+          timestamp: Date.now(),
+        },
+      });
+
+      console.log("NotificationService: Test notification created with tag: timer-notification");
+
+      // Auto-close after 5 seconds
+      setTimeout(() => {
+        notification.close();
+        console.log("NotificationService: Test notification closed");
+      }, 5000);
+    } catch (error) {
+      console.error("NotificationService: Error creating test notification:", error);
+    }
+  }
+
+  // Method to clear all notifications (for cleanup)
+  async clearAllNotifications(): Promise<void> {
+    if (!this.isSupported || !this.registration) {
+      console.warn("NotificationService: Cannot clear notifications - not supported");
+      return;
+    }
+
+    try {
+      const notifications = await this.registration.getNotifications();
+      console.log("NotificationService: Clearing all", notifications.length, "notifications");
+
+      notifications.forEach((notification) => {
+        console.log(
+          "NotificationService: Closing notification:",
+          notification.title,
+          "with tag:",
+          notification.tag
+        );
+        notification.close();
+      });
+
+      console.log("NotificationService: All notifications cleared");
+    } catch (error) {
+      console.error("NotificationService: Error clearing all notifications:", error);
+    }
+  }
+
   // Clear notifications by tag or all notifications
   async clearNotifications(tag?: string): Promise<void> {
     if (!this.isSupported || !this.registration) {
@@ -360,11 +449,26 @@ class NotificationService {
     try {
       // Get all notifications
       const notifications = await this.registration.getNotifications();
+      console.log("NotificationService: Found", notifications.length, "total notifications");
+
+      // Log all notification tags for debugging
+      notifications.forEach((notification, index) => {
+        console.log(
+          `NotificationService: Notification ${index}: tag="${notification.tag}", title="${notification.title}"`
+        );
+      });
 
       // Filter by tag if specified
       const notificationsToClose = tag
         ? notifications.filter((notification) => notification.tag === tag)
         : notifications;
+
+      console.log(
+        "NotificationService: Found",
+        notificationsToClose.length,
+        "notifications to close",
+        tag ? `with tag: ${tag}` : ""
+      );
 
       // Close each notification
       notificationsToClose.forEach((notification) => notification.close());
@@ -383,6 +487,9 @@ class NotificationService {
   // Send a silent push notification to clear notifications on all user devices
   async sendClearNotificationMessage(tag?: string): Promise<void> {
     try {
+      // First, clear local notifications immediately
+      await this.clearNotifications(tag);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -449,11 +556,19 @@ class NotificationService {
 // Create a singleton instance
 export const notificationService = new NotificationService();
 
-// Expose for testing in browser console
-if (typeof window !== "undefined") {
-  (window as any).testNotification = () => notificationService.testNotification();
-  (window as any).testPushEvent = () => notificationService.testPushEvent();
-}
+// Expose test methods globally for debugging
+(window as any).testNotification = () => notificationService.testNotification();
+(window as any).testPushEvent = () => notificationService.testPushEvent();
+(window as any).testClearNotifications = () => notificationService.testClearNotifications();
+(window as any).testCreateNotificationWithTag = () =>
+  notificationService.testCreateNotificationWithTag();
+(window as any).clearAllNotifications = () => notificationService.clearAllNotifications();
+
+// Add a global function to clear all notifications immediately
+(window as any).clearAllNotificationsNow = () => {
+  console.log("Clearing all notifications immediately...");
+  notificationService.clearAllNotifications();
+};
 
 // Export the class for testing
 export { NotificationService };

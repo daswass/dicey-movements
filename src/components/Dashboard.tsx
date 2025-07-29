@@ -14,6 +14,7 @@ import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
+import { notificationService } from "../utils/notificationService";
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -149,6 +150,15 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
       if (!latestSession || !user) return;
 
+      // Clear timer notifications when completing exercise
+      try {
+        console.log("Dashboard: Clearing timer notifications on workout complete");
+        notificationService.clearAllNotifications(); // Clear all notifications first
+        await notificationService.sendClearNotificationMessage("timer-notification");
+      } catch (error) {
+        console.error("Dashboard: Error clearing notifications:", error);
+      }
+
       // Get the current (derived) multiplier for this exercise before logging it in activity
       const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
 
@@ -248,6 +258,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     const resetAll = useCallback(async () => {
       console.log("Dashboard: Resetting all game state.");
+
+      // Clear timer notifications when resetting
+      try {
+        notificationService.clearAllNotifications(); // Clear all notifications first
+        await notificationService.sendClearNotificationMessage("timer-notification");
+      } catch (error) {
+        console.error("Dashboard: Error clearing notifications on reset:", error);
+      }
 
       setLatestSession(null);
       setCurrentWorkoutComplete(false);
@@ -410,6 +428,15 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const updateTimerDuration = useCallback(
       async (newDuration: number) => {
         console.log("Dashboard: updateTimerDuration received newDuration:", newDuration);
+
+        // Clear timer notifications when changing duration
+        try {
+          notificationService.clearAllNotifications(); // Clear all notifications first
+          await notificationService.sendClearNotificationMessage("timer-notification");
+        } catch (error) {
+          console.error("Dashboard: Error clearing notifications on duration change:", error);
+        }
+
         onResetTimerToDuration(newDuration); // Call context to set timeLeft and stop worker
 
         if (user) {

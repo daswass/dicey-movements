@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
+import { notificationService } from "../utils/notificationService";
 
 interface TimerProps {
   duration: number; // The initial total duration for progress calculation (from user profile)
@@ -64,6 +65,15 @@ const Timer: React.FC<TimerProps> = ({
 
   const handleStart = useCallback(() => {
     console.log("Timer component - Start button clicked. Starting duration:", duration);
+
+    // Clear any old timer notifications when starting
+    try {
+      notificationService.clearAllNotifications(); // Clear all notifications first
+      notificationService.sendClearNotificationMessage("timer-notification");
+    } catch (error) {
+      console.error("Timer: Error clearing notifications on start:", error);
+    }
+
     startTimer(duration); // Start with the full duration from props
   }, [startTimer, duration]);
 
@@ -77,11 +87,27 @@ const Timer: React.FC<TimerProps> = ({
   const handlePause = useCallback(() => {
     console.log("Timer component - Pause button clicked.");
     pauseTimer();
+
+    // Clear timer notifications when pausing
+    try {
+      notificationService.clearAllNotifications(); // Clear all notifications first
+      notificationService.sendClearNotificationMessage("timer-notification");
+    } catch (error) {
+      console.error("Timer: Error clearing notifications on pause:", error);
+    }
   }, [pauseTimer]);
 
   const handleResume = useCallback(() => {
     console.log("Timer component - Resume button clicked.");
     resumeTimer();
+
+    // Clear any lingering timer notifications when resuming
+    try {
+      notificationService.clearAllNotifications(); // Clear all notifications first
+      notificationService.sendClearNotificationMessage("timer-notification");
+    } catch (error) {
+      console.error("Timer: Error clearing notifications on resume:", error);
+    }
   }, [resumeTimer]);
 
   // Redefine the state flags for accurate button display logic

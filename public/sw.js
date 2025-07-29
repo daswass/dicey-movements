@@ -39,14 +39,82 @@ self.addEventListener("push", (event) => {
     if (event.data) {
       try {
         const data = event.data.json();
+        console.log("Service Worker: Received push data:", data);
         notificationData = { ...notificationData, ...data };
+        console.log("Service Worker: Merged notification data:", notificationData);
       } catch (e) {
         console.error("Service Worker: Error parsing push data:", e);
       }
+    } else {
+      console.log("Service Worker: No push data received, using defaults");
+    }
+
+    // Handle clear notifications type
+    if (notificationData.data && notificationData.data.type === "clear_notifications") {
+      console.log("Service Worker: Handling clear notifications request");
+
+      // Clear existing notifications by tag
+      const clearTag = notificationData.data.clearTag || notificationData.tag;
+      if (clearTag) {
+        self.registration.getNotifications().then((notifications) => {
+          console.log("Service Worker: Found", notifications.length, "notifications");
+          notifications.forEach((notification) => {
+            console.log(
+              "Service Worker: Notification tag:",
+              notification.tag,
+              "looking for:",
+              clearTag
+            );
+            if (notification.tag === clearTag) {
+              console.log("Service Worker: Closing notification with tag:", clearTag);
+              notification.close();
+            }
+          });
+        });
+      }
+
+      // Don't show a new notification for clear requests
+      return;
+    }
+
+    // Handle silent notifications (don't show them)
+    if (notificationData.silent === true) {
+      console.log("Service Worker: Received silent notification, not displaying");
+      return;
     }
 
     try {
-      const promise = self.registration.showNotification(notificationData.title, notificationData);
+      // Extract notification options properly
+      const notificationOptions = {
+        body: notificationData.body,
+        icon: notificationData.icon,
+        badge: notificationData.badge,
+        tag: notificationData.tag,
+        group: notificationData.group,
+        requireInteraction: notificationData.requireInteraction,
+        actions: notificationData.actions,
+        data: notificationData.data,
+        silent: notificationData.silent,
+      };
+
+      console.log("Service Worker: Final notification options:", notificationOptions);
+      console.log("Service Worker: Showing notification with tag:", notificationOptions.tag);
+      const promise = self.registration.showNotification(
+        notificationData.title,
+        notificationOptions
+      );
+
+      // Log when notification is actually shown
+      promise
+        .then(() => {
+          console.log(
+            "Service Worker: Notification shown successfully with tag:",
+            notificationOptions.tag
+          );
+        })
+        .catch((error) => {
+          console.error("Service Worker: Error showing notification:", error);
+        });
 
       // Only use waitUntil if it's a real push event
       if (event.waitUntil && typeof event.waitUntil === "function") {

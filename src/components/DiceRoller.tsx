@@ -29,9 +29,6 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   }, [session]);
 
   const rollDice = useCallback(() => {
-    // Send clear message to all user devices when starting a new workout
-    notificationService.sendClearNotificationMessage("timer-notification");
-
     setIsRolling(true);
     const animationDuration = 1500;
     const frames = 15;

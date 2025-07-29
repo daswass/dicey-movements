@@ -303,7 +303,26 @@ app.post("/api/push/send", async (req, res) => {
     let success = false;
 
     // Handle different notification types
-    if (payload.type === "achievement") {
+    if (payload.type === "clear_notifications") {
+      // Send a silent notification that will clear existing notifications by tag
+      const clearPayload = {
+        title: "", // Empty title for silent notification
+        body: "", // Empty body for silent notification
+        icon: "/favicon.svg",
+        badge: "/favicon.svg",
+        tag: payload.clearTag || payload.tag,
+        silent: true, // Standard Web Push Protocol flag for silent notifications
+        data: {
+          type: "clear_notifications",
+          clearTag: payload.clearTag || payload.tag,
+        },
+      };
+      success = await pushNotificationService.sendNotification(userId, clearPayload);
+    } else if (payload.type === "timer_expired") {
+      console.log("Backend: Processing timer_expired notification for user:", userId);
+      success = await pushNotificationService.sendTimerExpiredNotification(userId);
+      console.log("Backend: Timer expired notification result:", success);
+    } else if (payload.type === "achievement") {
       success = await pushNotificationService.sendAchievementNotification(
         userId,
         payload.achievementName

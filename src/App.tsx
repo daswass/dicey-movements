@@ -290,6 +290,15 @@ function App() {
 
   const handleStartTimer = useCallback(() => {
     if (!userProfile) return;
+
+    // Clear any old timer notifications when starting
+    try {
+      notificationService.clearAllNotifications(); // Clear all notifications first
+      notificationService.sendClearNotificationMessage("timer-notification");
+    } catch (error) {
+      console.error("App.tsx: Error clearing notifications on timer start:", error);
+    }
+
     const duration = userProfile.timer_duration;
     // Reset timeLeft to full duration before starting to prevent immediate completion
     setTimeLeft(duration);
@@ -297,6 +306,9 @@ function App() {
     setIsTimerActive(true);
     setTimerComplete(false);
     setCurrentWorkoutComplete(false);
+    // Reset notification sent flag for new timer session
+    notificationSentRef.current = false;
+    console.log("App.tsx: Notification flag reset to false for new timer session");
   }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive, setTimeLeft]);
 
   const playSound = useCallback(() => {
@@ -342,6 +354,7 @@ function App() {
           icon: "/favicon.svg",
           requireInteraction: true,
           silent: false,
+          tag: "timer-notification",
         });
       } else if (Notification.permission !== "denied") {
         Notification.requestPermission().then((permission) => {
@@ -351,6 +364,7 @@ function App() {
               icon: "/favicon.svg",
               requireInteraction: true,
               silent: false,
+              tag: "timer-notification",
             });
           }
         });
@@ -413,6 +427,9 @@ function App() {
   const stopTimerNotifications = useCallback(() => {
     setIsTitleFlashing(false);
     document.body.classList.remove("timer-expired-flash");
+
+    // Don't clear notifications on user interaction - only stop visual effects
+    console.log("App.tsx: User interaction stopped timer flashing effects");
   }, []);
 
   // Stop notifications when user interacts with the page
@@ -468,8 +485,12 @@ function App() {
   useEffect(() => {
     if (timerComplete && !notificationSentRef.current) {
       console.log("App.tsx: Timer has completed! Playing sound and checking for notification.");
+      console.log("App.tsx: notificationSentRef.current was:", notificationSentRef.current);
       notificationSentRef.current = true; // Mark notification as sent
+      console.log("App.tsx: notificationSentRef.current set to:", notificationSentRef.current);
       notifyTimerExpired();
+    } else if (timerComplete && notificationSentRef.current) {
+      console.log("App.tsx: Timer completed but notification already sent, skipping");
     }
   }, [timerComplete, notifyTimerExpired]);
 
