@@ -109,34 +109,48 @@ function App() {
   useEffect(() => {
     const initializeNotifications = async () => {
       try {
-        const initialized = await notificationService.initialize();
-        if (initialized) {
-          // Request permission after initialization
-          const permission = await notificationService.requestPermission();
-
-          // If permission is granted, subscribe to push notifications
-          if (permission.permission === "granted") {
-            await notificationService.subscribeToPushNotifications();
-          }
-        }
+        await notificationService.initialize();
       } catch (error) {
-        console.error("App.tsx: Error initializing notification service:", error);
+        console.error("App.tsx: Error initializing notifications:", error);
       }
     };
 
+    // Handle service worker updates
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        console.log("App.tsx: Service worker updated");
+      });
+
+      navigator.serviceWorker.addEventListener("updatefound", () => {
+        console.log("App.tsx: Service worker update found");
+      });
+    }
+
     initializeNotifications();
+  }, []);
+
+  // Reset notification flags for new timer sessions
+  const resetNotificationFlags = useCallback(() => {
+    notificationSentRef.current = false;
+    console.log("App.tsx: Notification flags reset");
   }, []);
 
   // Listen for timer completion from notification clicks
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "TIMER_COMPLETE_FROM_NOTIFICATION") {
+      if (event.data.type === "TIMER_COMPLETE_FROM_NOTIFICATION") {
+        console.log("App.tsx: Timer complete message received from notification");
         setTimerComplete(true);
-        setCurrentWorkoutComplete(true);
-        // Stop the timer and set it to completed state
+        setCurrentWorkoutComplete(false);
         stopWorkerTimer();
         setTimeLeft(0);
         setIsTimerActive(false);
+      }
+
+      // Handle reset notification state message
+      if (event.data.type === "RESET_NOTIFICATION_STATE") {
+        resetNotificationFlags();
+        notificationService.resetNotificationState();
       }
     };
 
@@ -144,7 +158,14 @@ function App() {
     return () => {
       navigator.serviceWorker?.removeEventListener("message", handleMessage);
     };
-  }, [setTimerComplete, setCurrentWorkoutComplete, stopWorkerTimer, setTimeLeft, setIsTimerActive]);
+  }, [
+    setTimerComplete,
+    setCurrentWorkoutComplete,
+    stopWorkerTimer,
+    setTimeLeft,
+    setIsTimerActive,
+    resetNotificationFlags,
+  ]);
 
   // Check for timer completion from URL parameter (new window case)
   useEffect(() => {
@@ -728,6 +749,7 @@ function App() {
                   onResetTimerToDuration={resetTimerWorkerToDuration}
                   userProfile={userProfile}
                   setUserProfile={setUserProfile}
+                  resetNotificationFlags={resetNotificationFlags}
                 />
               }
             />

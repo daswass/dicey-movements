@@ -25,6 +25,7 @@ interface DashboardProps {
   onResetTimerToDuration: (newDuration: number) => void;
   userProfile: UserProfile | null;
   setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+  resetNotificationFlags: () => void;
 }
 
 interface Activity {
@@ -48,6 +49,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     onResetTimerToDuration,
     userProfile,
     setUserProfile,
+    resetNotificationFlags,
   }) => {
     const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
 
@@ -134,12 +136,38 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setCurrentWorkoutComplete(false);
     }, [setTimerComplete, setCurrentWorkoutComplete]);
 
-    const handleRollAndStart = useCallback(() => {
-      setIsRollAndStartMode(true);
-      // Don't set timerComplete to true to avoid triggering the sound
-      // Instead, we'll show the dice roller directly
+    const handleRollAndStart = useCallback(async () => {
+      console.log("Dashboard: Roll and Start button clicked");
+      if (latestSession) {
+        try {
+          await api.completeWorkout(
+            user!.id,
+            latestSession.exercise.name,
+            latestSession.reps,
+            multipliers
+          );
+          await fetchHistory();
+        } catch (error) {
+          console.error("Error completing workout:", error);
+        }
+      }
+
       setCurrentWorkoutComplete(false);
-    }, []);
+      setTimerComplete(false);
+      // Clear notification flags for new timer session
+      sessionStorage.removeItem("openedFromNotification");
+      resetNotificationFlags();
+      onStartTimer();
+      setLatestSession(null);
+      setIsRollAndStartMode(false); // Reset roll and start mode
+    }, [
+      latestSession,
+      user?.id,
+      multipliers,
+      fetchHistory,
+      setUserProfile,
+      resetNotificationFlags,
+    ]);
 
     const handleWorkoutComplete = useCallback(async () => {
       setShowHighFiveModal(true);
@@ -235,10 +263,20 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
       setCurrentWorkoutComplete(false);
       setTimerComplete(false);
+      // Clear notification flags for new timer session
+      sessionStorage.removeItem("openedFromNotification");
+      resetNotificationFlags();
       onStartTimer();
       setLatestSession(null);
       setIsRollAndStartMode(false); // Reset roll and start mode
-    }, [latestSession, user?.id, multipliers, fetchHistory, setUserProfile]);
+    }, [
+      latestSession,
+      user?.id,
+      multipliers,
+      fetchHistory,
+      setUserProfile,
+      resetNotificationFlags,
+    ]);
 
     const fetchLastSessionStart = useCallback(async () => {
       if (!user) return;
@@ -270,6 +308,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setLatestSession(null);
       setCurrentWorkoutComplete(false);
       setTimerComplete(false);
+      // Clear notification flags for new timer session
+      sessionStorage.removeItem("openedFromNotification");
+      resetNotificationFlags();
       setIsRollAndStartMode(false); // Reset roll and start mode
 
       const { error } = await supabase
@@ -289,6 +330,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setLatestSession,
       setCurrentWorkoutComplete,
       setTimerComplete,
+      resetNotificationFlags,
     ]);
 
     // Check if app was opened from notification

@@ -178,6 +178,16 @@ class NotificationService {
     }
   }
 
+  // Reset all notification state (called when clear notification is received)
+  resetNotificationState(): void {
+    // Clear localStorage
+    localStorage.removeItem("notification_endpoint");
+    localStorage.removeItem("notification_device_id");
+
+    // Clear sessionStorage
+    sessionStorage.removeItem("openedFromNotification");
+  }
+
   async requestPermission(): Promise<NotificationPermission> {
     if (!this.isSupported) {
       return { permission: "denied", supported: false };

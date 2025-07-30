@@ -1,7 +1,7 @@
 // Service Worker for Push Notifications
 // This service worker follows standard practices
 
-const CACHE_NAME = "dicey-movements-v10";
+const CACHE_NAME = "dicey-movements-v11";
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
@@ -34,7 +34,7 @@ self.addEventListener("activate", (event) => {
 });
 
 // Push notification event
-self.addEventListener("push", (event) => {
+self.addEventListener("push", async (event) => {
   try {
     let notificationData = {
       title: "⏰ Timer Expired!",
@@ -67,6 +67,16 @@ self.addEventListener("push", (event) => {
           });
         });
       }
+
+      // Send message to all clients to reset notification state
+      clients.matchAll().then((clientList) => {
+        clientList.forEach((client) => {
+          client.postMessage({
+            type: "RESET_NOTIFICATION_STATE",
+            tag: clearTag,
+          });
+        });
+      });
 
       return;
     }
