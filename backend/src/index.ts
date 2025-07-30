@@ -27,6 +27,9 @@ console.log(
 // Initialize Express app
 const app = express();
 
+// Trust proxy for rate limiting behind load balancers/proxies
+app.set("trust proxy", 1);
+
 // Initialize environment variables
 const ouraWebhookVerificationToken =
   process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
