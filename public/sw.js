@@ -46,9 +46,7 @@ self.addEventListener("push", (event) => {
     if (event.data) {
       try {
         const data = event.data.json();
-        console.log("Service Worker: Received push data:", data);
         notificationData = { ...notificationData, ...data };
-        console.log("Service Worker: Merged notification data:", notificationData);
       } catch (e) {
         console.error("Service Worker: Error parsing push data:", e);
       }
@@ -58,35 +56,22 @@ self.addEventListener("push", (event) => {
 
     // Handle clear notifications type
     if (notificationData.data && notificationData.data.type === "clear_notifications") {
-      console.log("Service Worker: Handling clear notifications request");
-
       // Clear existing notifications by tag
       const clearTag = notificationData.data.clearTag || notificationData.tag;
       if (clearTag) {
         self.registration.getNotifications().then((notifications) => {
-          console.log("Service Worker: Found", notifications.length, "notifications");
           notifications.forEach((notification) => {
-            console.log(
-              "Service Worker: Notification tag:",
-              notification.tag,
-              "looking for:",
-              clearTag
-            );
             if (notification.tag === clearTag) {
-              console.log("Service Worker: Closing notification with tag:", clearTag);
               notification.close();
             }
           });
         });
       }
 
-      // Don't show a new notification for clear requests
       return;
     }
 
-    // Handle silent notifications (don't show them)
     if (notificationData.silent === true) {
-      console.log("Service Worker: Received silent notification, not displaying");
       return;
     }
 

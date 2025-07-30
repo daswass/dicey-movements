@@ -429,6 +429,12 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       async (newDuration: number) => {
         console.log("Dashboard: updateTimerDuration received newDuration:", newDuration);
 
+        // Update local state immediately for instant UI response
+        setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
+
+        // Reset timer to new duration immediately
+        onResetTimerToDuration(newDuration);
+
         // Clear timer notifications when changing duration
         try {
           notificationService.clearAllNotifications(); // Clear all notifications first
@@ -437,8 +443,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           console.error("Dashboard: Error clearing notifications on duration change:", error);
         }
 
-        onResetTimerToDuration(newDuration); // Call context to set timeLeft and stop worker
-
+        // Update database in the background
         if (user) {
           const { error } = await supabase
             .from("profiles")
@@ -446,26 +451,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             .eq("id", user.id);
           if (error) {
             console.error("Dashboard: Error updating timer_duration in DB:", error);
-          } else {
-            const { data: updatedProfileFromDb, error: fetchError } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", user.id)
-              .single();
-            if (updatedProfileFromDb && !fetchError) {
-              const confirmedProfile = {
-                ...updatedProfileFromDb,
-                timer_duration: updatedProfileFromDb.timer_duration || 300,
-              };
-              setUserProfile(confirmedProfile);
-              console.log(
-                "Dashboard: setUserProfile in App.tsx called with confirmed DB data:",
-                JSON.stringify(confirmedProfile)
-              );
-            } else {
-              console.error("Dashboard: Error re-fetching profile after update:", fetchError);
-              setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
-            }
           }
         }
       },
