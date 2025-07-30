@@ -1,6 +1,7 @@
-import { Bell, CheckCircle, XCircle } from "lucide-react";
+import { Bell, CheckCircle, XCircle, RefreshCw } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { api } from "../utils/api";
+import { notificationService } from "../utils/notificationService";
 
 interface NotificationSettings {
   timer_expired: boolean;
@@ -28,6 +29,12 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Check if device is mobile
+  const isMobile = () => {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  };
 
   useEffect(() => {
     if (userProfile?.notification_settings) {
@@ -57,6 +64,22 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({
       console.error("Error updating notification setting:", error);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const forceRefreshSubscription = async () => {
+    try {
+      setIsRefreshing(true);
+      console.log("NotificationSettings: Force refreshing subscription...");
+
+      // Force refresh the subscription
+      await notificationService.subscribeToPushNotifications(true);
+
+      console.log("NotificationSettings: Subscription refreshed successfully");
+    } catch (error) {
+      console.error("NotificationSettings: Error refreshing subscription:", error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -126,6 +149,33 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Mobile-only refresh subscription button */}
+      {isMobile() && (
+        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Refresh Notifications
+              </h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Force refresh notification subscription (mobile only)
+              </p>
+            </div>
+            <button
+              onClick={forceRefreshSubscription}
+              disabled={isRefreshing}
+              className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                isRefreshing
+                  ? "bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600 text-white"
+              }`}>
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {isUpdating && (
         <div className="flex items-center space-x-2 text-sm text-blue-600 dark:text-blue-400">
