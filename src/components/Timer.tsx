@@ -32,10 +32,8 @@ const Timer: React.FC<TimerProps> = ({
   // Health check function
   const performHealthCheck = useCallback(async () => {
     try {
-      console.log("Timer: Performing health check to wake up backend...");
       const isHealthy = await api.healthCheck();
       if (isHealthy) {
-        console.log("Timer: Health check successful - backend is awake");
         setHealthCheckPerformed(true);
       } else {
         console.warn("Timer: Health check failed - backend may be hibernated");
@@ -48,7 +46,6 @@ const Timer: React.FC<TimerProps> = ({
   // Effect to perform health check when 1 minute left
   useEffect(() => {
     if (isTimerActive && timeLeft === 60 && !healthCheckPerformed) {
-      console.log("Timer: 1 minute remaining - performing health check");
       performHealthCheck();
     }
   }, [isTimerActive, timeLeft, healthCheckPerformed, performHealthCheck]);
