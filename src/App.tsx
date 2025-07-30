@@ -91,9 +91,14 @@ function App() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user.id, session);
+        // Only fetch if the user ID has actually changed
+        if (lastFetchedUserIdRef.current !== session.user.id) {
+          fetchUserProfile(session.user.id, session);
+        }
       } else {
         setLoadingProfile(false);
+        // Reset the ref when user logs out
+        lastFetchedUserIdRef.current = null;
       }
     });
 
@@ -160,7 +165,7 @@ function App() {
 
   const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
     // Prevent refetching if we already have the profile for this user
-    if (lastFetchedUserIdRef.current === userId && userProfile?.id === userId) {
+    if (lastFetchedUserIdRef.current === userId) {
       console.log("App.tsx: Profile already fetched for user:", userId);
       return;
     }

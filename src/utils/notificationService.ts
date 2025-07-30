@@ -102,47 +102,16 @@ class NotificationService {
     }
 
     try {
-      // Register service worker
-      this.registration = await navigator.serviceWorker.register("/sw.js", {
-        updateViaCache: "none",
-      });
+      // Wait for service worker to be ready (standard practice)
+      const registration = await navigator.serviceWorker.ready;
+      this.registration = registration;
 
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready;
-
-      // Force service worker update if needed
-      if (this.registration.waiting) {
-        this.registration.waiting.postMessage({ type: "SKIP_WAITING" });
-      }
-
-      // Force update check
-      await this.registration.update();
-
-      // Listen for service worker updates
-      this.registration.addEventListener("updatefound", () => {
-        const newWorker = this.registration!.installing;
-        if (newWorker) {
-          newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              console.log("NotificationService: New service worker available");
-            }
-          });
-        }
-      });
-
-      // Listen for controller change
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        console.log("NotificationService: Service worker controller changed");
-        // Force subscription refresh when service worker changes
-        this.handleServiceWorkerChange();
-      });
-
-      // Check if this is a fresh app launch (like after re-adding to home screen)
-      this.checkForFreshLaunch();
+      // Check if this is a fresh app launch
+      await this.checkForFreshLaunch();
 
       return true;
     } catch (error) {
-      console.error("NotificationService: Failed to register service worker:", error);
+      console.error("NotificationService: Failed to initialize:", error);
       return false;
     }
   }

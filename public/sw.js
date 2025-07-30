@@ -1,5 +1,7 @@
 // Service Worker for Push Notifications
-const CACHE_NAME = "dicey-movements-v4";
+// This service worker follows standard practices
+
+const CACHE_NAME = "dicey-movements-v9";
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
@@ -8,6 +10,8 @@ self.addEventListener("install", (event) => {
       return cache.addAll(["/", "/favicon.svg", "/manifest.json"]);
     })
   );
+  // Force the waiting service worker to become the active service worker
+  self.skipWaiting();
 });
 
 // Activate event - clean up old caches
@@ -18,7 +22,10 @@ self.addEventListener("activate", (event) => {
         return Promise.all(
           cacheNames
             .filter((cacheName) => cacheName !== CACHE_NAME)
-            .map((cacheName) => caches.delete(cacheName))
+            .map((cacheName) => {
+              console.log("Service Worker: Deleting old cache:", cacheName);
+              return caches.delete(cacheName);
+            })
         );
       }),
       self.clients.claim(),
@@ -153,6 +160,7 @@ self.addEventListener("notificationclick", (event) => {
 
 // Background sync for offline functionality
 self.addEventListener("sync", (event) => {
+  console.log("Service Worker: Background sync event:", event.tag);
   if (event.tag === "background-sync") {
     event.waitUntil(doBackgroundSync());
   }
@@ -160,6 +168,7 @@ self.addEventListener("sync", (event) => {
 
 async function doBackgroundSync() {
   // Handle background sync tasks
+  console.log("Service Worker: Performing background sync");
 }
 
 // Message listener to handle updates
@@ -167,13 +176,4 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
-});
-
-// Fetch event for offline support
-self.addEventListener("fetch", (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
 });
