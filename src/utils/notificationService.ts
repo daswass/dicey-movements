@@ -123,8 +123,6 @@ class NotificationService {
       const storedDeviceId = localStorage.getItem("notification_device_id");
 
       if (!storedDeviceId || storedDeviceId !== this.deviceId) {
-        console.log("NotificationService: Fresh launch detected, forcing subscription refresh");
-
         // Store the new device ID
         localStorage.setItem("notification_device_id", this.deviceId || "");
 
@@ -175,8 +173,6 @@ class NotificationService {
       } else {
         console.log("NotificationService: Failed to create new subscription");
       }
-
-      console.log("NotificationService: Subscription force refreshed");
     } catch (error) {
       console.error("NotificationService: Error force refreshing subscription:", error);
     }
@@ -376,12 +372,16 @@ class NotificationService {
             },
           }),
         });
-        console.log("NotificationService: Push notification sent successfully");
       } else {
         console.log("NotificationService: No user found");
       }
     } catch (error) {
-      console.error("NotificationService: Error sending push notification:", error);
+      // Handle errors gracefully - don't throw, just log
+      console.warn(
+        "NotificationService: Failed to send timer expired notification (backend may be hibernated):",
+        error
+      );
+      // Don't re-throw - this is not critical for app functionality
     }
   }
 
@@ -521,8 +521,6 @@ class NotificationService {
         );
         notification.close();
       });
-
-      console.log("NotificationService: All notifications cleared");
     } catch (error) {
       console.error("NotificationService: Error clearing all notifications:", error);
     }
@@ -552,13 +550,14 @@ class NotificationService {
             },
           }),
         });
-        console.log(
-          "NotificationService: Silent clear notification message sent",
-          tag ? `for tag: ${tag}` : ""
-        );
       }
     } catch (error) {
-      console.error("NotificationService: Error sending clear notification message:", error);
+      // Handle errors gracefully - don't throw, just log
+      console.warn(
+        "NotificationService: Failed to send clear notification message (backend may be hibernated):",
+        error
+      );
+      // Don't re-throw - this is not critical for app functionality
     }
   }
 

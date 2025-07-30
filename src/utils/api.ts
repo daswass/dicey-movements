@@ -27,6 +27,17 @@ export const api = {
     return response.json();
   },
 
+  // Health check function to wake up hibernated backend
+  async healthCheck(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/health`);
+      return response.ok;
+    } catch (error) {
+      console.warn("API: Health check failed:", error);
+      return false;
+    }
+  },
+
   // Specific API methods
   async getVapidPublicKey() {
     return this.fetch("/api/push/vapid-public-key");

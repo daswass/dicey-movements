@@ -1,7 +1,7 @@
 // Service Worker for Push Notifications
 // This service worker follows standard practices
 
-const CACHE_NAME = "dicey-movements-v9";
+const CACHE_NAME = "dicey-movements-v10";
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {

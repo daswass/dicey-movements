@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
 import { notificationService } from "../utils/notificationService";
+import { api } from "../utils/api";
 
 interface TimerProps {
   duration: number; // The initial total duration for progress calculation (from user profile)
@@ -17,6 +18,9 @@ const Timer: React.FC<TimerProps> = ({
   const { isTimerActive, timeLeft, startTimer, stopTimer, pauseTimer, resumeTimer } =
     useTimerWorker();
 
+  // Track if health check has been performed
+  const [healthCheckPerformed, setHealthCheckPerformed] = useState(false);
+
   // Initial progress percentage state
   // Start with 100% visually if timeLeft is equal to duration (ready state)
   const [progressPercentage, setProgressPercentage] = useState<number>(() => {
@@ -24,6 +28,30 @@ const Timer: React.FC<TimerProps> = ({
     if (!isTimerActive && timeLeft === duration) return 100;
     return (timeLeft / duration) * 100;
   });
+
+  // Health check function
+  const performHealthCheck = useCallback(async () => {
+    try {
+      console.log("Timer: Performing health check to wake up backend...");
+      const isHealthy = await api.healthCheck();
+      if (isHealthy) {
+        console.log("Timer: Health check successful - backend is awake");
+        setHealthCheckPerformed(true);
+      } else {
+        console.warn("Timer: Health check failed - backend may be hibernated");
+      }
+    } catch (error) {
+      console.warn("Timer: Health check failed:", error);
+    }
+  }, []);
+
+  // Effect to perform health check when 1 minute left
+  useEffect(() => {
+    if (isTimerActive && timeLeft === 60 && !healthCheckPerformed) {
+      console.log("Timer: 1 minute remaining - performing health check");
+      performHealthCheck();
+    }
+  }, [isTimerActive, timeLeft, healthCheckPerformed, performHealthCheck]);
 
   // Effect to update progress percentage
   useEffect(() => {
@@ -63,19 +91,31 @@ const Timer: React.FC<TimerProps> = ({
     return "text-red-500 dark:text-red-400";
   }, [progressPercentage]);
 
+  // Improved notification clearing with better error handling
+  const clearNotificationsSafely = useCallback(async () => {
+    try {
+      await notificationService.clearAllNotifications();
+      await notificationService.sendClearNotificationMessage("timer-notification");
+    } catch (error) {
+      console.warn(
+        "Timer: Failed to clear notifications (this is normal if backend is hibernated):",
+        error
+      );
+      // Don't throw - this is not critical for timer functionality
+    }
+  }, []);
+
   const handleStart = useCallback(() => {
     console.log("Timer component - Start button clicked. Starting duration:", duration);
 
+    // Reset health check flag when starting new timer
+    setHealthCheckPerformed(false);
+
     // Clear any old timer notifications when starting
-    try {
-      notificationService.clearAllNotifications(); // Clear all notifications first
-      notificationService.sendClearNotificationMessage("timer-notification");
-    } catch (error) {
-      console.error("Timer: Error clearing notifications on start:", error);
-    }
+    clearNotificationsSafely();
 
     startTimer(duration); // Start with the full duration from props
-  }, [startTimer, duration]);
+  }, [startTimer, duration, clearNotificationsSafely]);
 
   const handleRollAndStart = useCallback(() => {
     console.log("Timer component - Roll & Start button clicked.");
@@ -89,26 +129,16 @@ const Timer: React.FC<TimerProps> = ({
     pauseTimer();
 
     // Clear timer notifications when pausing
-    try {
-      notificationService.clearAllNotifications(); // Clear all notifications first
-      notificationService.sendClearNotificationMessage("timer-notification");
-    } catch (error) {
-      console.error("Timer: Error clearing notifications on pause:", error);
-    }
-  }, [pauseTimer]);
+    clearNotificationsSafely();
+  }, [pauseTimer, clearNotificationsSafely]);
 
   const handleResume = useCallback(() => {
     console.log("Timer component - Resume button clicked.");
     resumeTimer();
 
     // Clear any lingering timer notifications when resuming
-    try {
-      notificationService.clearAllNotifications(); // Clear all notifications first
-      notificationService.sendClearNotificationMessage("timer-notification");
-    } catch (error) {
-      console.error("Timer: Error clearing notifications on resume:", error);
-    }
-  }, [resumeTimer]);
+    clearNotificationsSafely();
+  }, [resumeTimer, clearNotificationsSafely]);
 
   // Redefine the state flags for accurate button display logic
   const isReadyToStart = !isTimerActive && timeLeft === duration && duration > 0; // At full duration, not active, and a valid duration is set
