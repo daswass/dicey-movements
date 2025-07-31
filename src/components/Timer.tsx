@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
-import { notificationService } from "../utils/notificationService";
 import { api } from "../utils/api";
+import { notificationService } from "../utils/notificationService";
+import { supabase } from "../utils/supabaseClient";
 
 interface TimerProps {
   duration: number; // The initial total duration for progress calculation (from user profile)
@@ -15,8 +16,15 @@ const Timer: React.FC<TimerProps> = ({
   onRollAndStart,
 }) => {
   // Destructure state and control functions directly from the context
-  const { isTimerActive, timeLeft, startTimer, stopTimer, pauseTimer, resumeTimer } =
-    useTimerWorker();
+  const {
+    isTimerActive,
+    timeLeft,
+    startTimer,
+    stopTimer,
+    pauseTimer,
+    resumeTimer,
+    resetTimerToDuration,
+  } = useTimerWorker();
 
   // Track if health check has been performed
   const [healthCheckPerformed, setHealthCheckPerformed] = useState(false);
@@ -137,6 +145,38 @@ const Timer: React.FC<TimerProps> = ({
     clearNotificationsSafely();
   }, [resumeTimer, clearNotificationsSafely]);
 
+  const handleReset = useCallback(() => {
+    console.log("Timer component - Reset button clicked.");
+    stopTimer();
+    // Reset to full duration using the context's reset function
+    resetTimerToDuration(duration);
+    clearNotificationsSafely();
+
+    // Clear database timer sync fields so refresh doesn't pick up old state
+    const clearTimerSync = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from("profiles")
+            .update({
+              timer_master_device_id: null,
+              timer_start_time: null,
+              timer_last_updated: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+          console.log("Timer: Cleared database timer sync fields");
+        }
+      } catch (error) {
+        console.error("Timer: Error clearing database timer sync fields:", error);
+      }
+    };
+
+    clearTimerSync();
+  }, [stopTimer, resetTimerToDuration, duration, clearNotificationsSafely]);
+
   // Redefine the state flags for accurate button display logic
   const isReadyToStart = !isTimerActive && timeLeft === duration && duration > 0; // At full duration, not active, and a valid duration is set
   const isRunning = isTimerActive && timeLeft > 0; // Timer is active and has time left
@@ -228,10 +268,26 @@ const Timer: React.FC<TimerProps> = ({
 
         {/* Resume Button: Only if paused */}
         {isPaused && (
+          <>
+            <button
+              onClick={handleResume}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+              Resume
+            </button>
+            <button
+              onClick={handleReset}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+              Reset
+            </button>
+          </>
+        )}
+
+        {/* Reset Button: Only if completed */}
+        {isCompleted && (
           <button
-            onClick={handleResume}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Resume
+            onClick={handleReset}
+            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+            Reset
           </button>
         )}
       </div>

@@ -19,6 +19,7 @@ import {
   updateUserLocation,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
+import { timerSyncService, type TimerState } from "./utils/timerSyncService";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
@@ -140,11 +141,33 @@ function App() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === "TIMER_COMPLETE_FROM_NOTIFICATION") {
         console.log("App.tsx: Timer complete message received from notification");
-        setTimerComplete(true);
-        setCurrentWorkoutComplete(false);
-        stopWorkerTimer();
-        setTimeLeft(0);
-        setIsTimerActive(false);
+
+        // Check if we're on the roll dice screen (timerComplete && !currentWorkoutComplete)
+        // This handles the cross-device scenario where user taps notification on mobile
+        // but then rolls dice on desktop
+        if (timerComplete && !currentWorkoutComplete) {
+          console.log("App.tsx: On roll dice screen, resetting timer state");
+          setTimerComplete(false);
+          setCurrentWorkoutComplete(false);
+          stopWorkerTimer();
+          setTimeLeft(0);
+          setIsTimerActive(false);
+
+          // Transfer master control to this device since user is interacting
+          if (!timerSyncService.isDeviceMaster()) {
+            timerSyncService.becomeMaster();
+          }
+        } else {
+          console.log("App.tsx: Not on roll dice screen, just marking as complete");
+          setTimerComplete(true);
+          setCurrentWorkoutComplete(false);
+          stopWorkerTimer();
+          setTimeLeft(0);
+          setIsTimerActive(false);
+        }
+
+        // Set a flag to prevent sending another notification
+        sessionStorage.setItem("openedFromNotification", "true");
       }
 
       // Handle reset notification state message
@@ -165,6 +188,8 @@ function App() {
     setTimeLeft,
     setIsTimerActive,
     resetNotificationFlags,
+    timerComplete,
+    currentWorkoutComplete,
   ]);
 
   // Check for timer completion from URL parameter (new window case)
@@ -179,7 +204,7 @@ function App() {
       setIsTimerActive(false);
       // Clean up the URL
       window.history.replaceState({}, document.title, window.location.pathname);
-      // Set a flag to prevent auto-start
+      // Set a flag to prevent auto-start and duplicate notifications
       sessionStorage.setItem("openedFromNotification", "true");
     }
   }, [setTimerComplete, setCurrentWorkoutComplete, stopWorkerTimer, setTimeLeft, setIsTimerActive]);
@@ -273,10 +298,8 @@ function App() {
         !openedFromNotification
       ) {
         setTimeLeft(userProfile.timer_duration);
-      } else if (openedFromNotification) {
-        // Clear the notification flag
-        sessionStorage.removeItem("openedFromNotification");
       }
+      // Don't clear the flag here - let it be cleared when actually used
     } else {
       if (timeLeft !== 0) {
         setTimeLeft(0);
@@ -291,23 +314,6 @@ function App() {
     timeLeft,
     setTimeLeft,
   ]);
-
-  const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    console.log("App.tsx: Updating settings:", newSettings);
-    setSettings((prev) => {
-      if (prev === null) {
-        return {
-          notificationsEnabled: newSettings.notificationsEnabled ?? false,
-          darkMode: newSettings.darkMode ?? false,
-        };
-      } else {
-        return {
-          ...prev,
-          ...newSettings,
-        };
-      }
-    });
-  }, []);
 
   const refreshPendingFriendRequests = useCallback(async () => {
     const count = await fetchPendingFriendRequests();
@@ -335,6 +341,9 @@ function App() {
     // Reset notification sent flag for new timer session
     notificationSentRef.current = false;
     console.log("App.tsx: Notification flag reset to false for new timer session");
+
+    // Start timer sync as master
+    timerSyncService.startTimerSync(duration);
   }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive, setTimeLeft]);
 
   const playSound = useCallback(() => {
@@ -410,6 +419,12 @@ function App() {
       return;
     }
 
+    // Only send notification if this device is the master
+    if (!timerSyncService.isDeviceMaster()) {
+      console.log("App.tsx: Not master device, skipping notification");
+      return;
+    }
+
     // 1. Play sound
     playSound();
 
@@ -433,7 +448,6 @@ function App() {
 
     // 4. Try to focus the window/tab (may not work due to browser security)
     if (document.hidden) {
-      // This is the most we can do to get attention
       window.focus();
     }
 
@@ -462,6 +476,12 @@ function App() {
       if (isTitleFlashing) {
         stopTimerNotifications();
       }
+
+      // Transfer master control if user interacts with timer on slave device
+      if (isTimerActive && !timerSyncService.isDeviceMaster()) {
+        console.log("App.tsx: User interaction on slave device, becoming master");
+        timerSyncService.becomeMaster();
+      }
     };
 
     // Listen for various user interactions
@@ -476,7 +496,7 @@ function App() {
       document.removeEventListener("touchstart", handleUserInteraction);
       document.removeEventListener("scroll", handleUserInteraction);
     };
-  }, [isTitleFlashing, stopTimerNotifications]);
+  }, [isTitleFlashing, stopTimerNotifications, isTimerActive]);
 
   // Handle title flashing
   useEffect(() => {
@@ -510,6 +530,20 @@ function App() {
     if (timerComplete && !notificationSentRef.current) {
       console.log("App.tsx: Timer has completed! Playing sound and checking for notification.");
       console.log("App.tsx: notificationSentRef.current was:", notificationSentRef.current);
+
+      // Check if timer completion came from a notification click
+      const openedFromNotification = sessionStorage.getItem("openedFromNotification");
+      if (openedFromNotification === "true") {
+        console.log(
+          "App.tsx: Timer completion came from notification click, skipping notification send"
+        );
+
+        sessionStorage.removeItem("openedFromNotification");
+        notificationSentRef.current = true;
+
+        return;
+      }
+
       notificationSentRef.current = true; // Mark notification as sent
       console.log("App.tsx: notificationSentRef.current set to:", notificationSentRef.current);
       notifyTimerExpired();
@@ -538,6 +572,75 @@ function App() {
       refreshPendingFriendRequests();
     }
   }, [window.location.pathname, refreshPendingFriendRequests]);
+
+  // Handle timer sync state changes
+  useEffect(() => {
+    const handleTimerStateChange = (state: TimerState) => {
+      console.log("App.tsx: Timer state changed:", state);
+
+      if (state.startTime && !isTimerActive && state.duration > 0) {
+        console.log("App.tsx: Timer started via sync");
+        const startTime = new Date(state.startTime);
+        const now = new Date();
+        const elapsedMs = now.getTime() - startTime.getTime();
+        const remainingMs = Math.max(0, state.duration * 1000 - elapsedMs);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+        if (remainingSeconds > 0) {
+          setTimeLeft(remainingSeconds);
+          setIsTimerActive(true);
+          setTimerComplete(false);
+          setCurrentWorkoutComplete(false);
+          startWorkerTimer(remainingSeconds);
+        } else {
+          // Timer has already completed - only set if not already completed
+          if (!timerComplete) {
+            console.log("App.tsx: Timer completed via sync");
+            setTimerComplete(true);
+            setIsTimerActive(false);
+            setTimeLeft(0);
+            setCurrentWorkoutComplete(false);
+            stopWorkerTimer();
+          } else {
+            console.log("App.tsx: Timer completion via sync skipped - already completed");
+          }
+        }
+      } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMaster()) {
+        if (isTimerActive) {
+          setIsTimerActive(false);
+          setTimeLeft(0);
+          stopWorkerTimer();
+        }
+      }
+    };
+
+    // Start polling for timer updates
+    timerSyncService.startPolling(handleTimerStateChange);
+
+    return () => {
+      timerSyncService.stopPolling();
+    };
+  }, [
+    timerComplete,
+    isTimerActive,
+    setTimerComplete,
+    setIsTimerActive,
+    setTimeLeft,
+    setCurrentWorkoutComplete,
+    stopWorkerTimer,
+    startWorkerTimer,
+  ]);
+
+  // Cleanup timer sync when component unmounts
+  useEffect(() => {
+    return () => {
+      // Stop timer sync if we're master
+      if (timerSyncService.isDeviceMaster()) {
+        timerSyncService.stopTimerSync();
+      }
+      timerSyncService.stopPolling();
+    };
+  }, []);
 
   if (!session) {
     return <Auth />;

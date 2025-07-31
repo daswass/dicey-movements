@@ -132,22 +132,41 @@ self.addEventListener("push", async (event) => {
 
 // Notification click event
 self.addEventListener("notificationclick", (event) => {
+  console.log("Service Worker: Notification clicked:", event.notification.title);
   event.notification.close();
 
-  // Focus app and send timer completion message
+  // Check if this is a timer notification
+  const isTimerNotification =
+    event.notification.tag === "timer-notification" ||
+    event.notification.data?.type === "timer_expired" ||
+    event.notification.title.includes("Timer");
+
+  // Focus app and send appropriate message
   event.waitUntil(
     clients.matchAll({ type: "window" }).then((clientList) => {
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
           // Focus existing window and send message
+          console.log("Service Worker: Focusing existing window");
           client.focus();
-          client.postMessage({ type: "TIMER_COMPLETE_FROM_NOTIFICATION" });
+
+          if (isTimerNotification) {
+            client.postMessage({ type: "TIMER_COMPLETE_FROM_NOTIFICATION" });
+          } else {
+            // For non-timer notifications (friend activity, etc.), just focus without special handling
+            client.postMessage({ type: "NOTIFICATION_CLICKED" });
+          }
           return Promise.resolve();
         }
       }
       if (clients.openWindow) {
-        // Open new window with timer completion parameter
-        return clients.openWindow("/?timerComplete=true");
+        // Open new window with appropriate parameter
+        console.log("Service Worker: Opening new window");
+        if (isTimerNotification) {
+          return clients.openWindow("/?timerComplete=true");
+        } else {
+          return clients.openWindow("/");
+        }
       }
     })
   );

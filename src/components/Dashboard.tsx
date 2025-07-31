@@ -336,8 +336,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     useEffect(() => {
       const openedFromNotification = sessionStorage.getItem("openedFromNotification");
       if (openedFromNotification === "true") {
-        sessionStorage.removeItem("openedFromNotification");
         // Don't auto-start timer if opened from notification
+        // Don't clear the flag here - let it be cleared when actually used
         return;
       }
     }, []);
@@ -348,6 +348,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         // Don't auto-reset if opened from notification
         const openedFromNotification = sessionStorage.getItem("openedFromNotification");
         if (openedFromNotification === "true") {
+          // Don't clear the flag here - let it be cleared when actually used
           return;
         }
 
