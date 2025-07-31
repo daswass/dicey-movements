@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../utils/supabaseClient";
+import { OuraService, type OuraStatus } from "../utils/ouraService";
 import NotificationPermission from "./NotificationPermission";
 import NotificationSettings from "./NotificationSettings";
+import { Activity, CheckCircle, XCircle, RefreshCw, Link, Unlink } from "lucide-react";
 
 interface SettingsPanelProps {
   timerDuration: number;
@@ -24,6 +26,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const [timerValue, setTimerValue] = useState<number>(timerDuration);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -34,6 +41,71 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
     getCurrentUser();
   }, []);
+
+  // Load Oura status when component mounts
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadOuraStatus();
+    }
+  }, [currentUser?.id]);
+
+  const loadOuraStatus = async () => {
+    try {
+      const status = await OuraService.getStatus(currentUser.id);
+      setOuraStatus(status);
+    } catch (error) {
+      console.error("Error loading Oura status:", error);
+      setOuraStatus({ connected: false, hasValidToken: false });
+    }
+  };
+
+  const handleConnectOura = async () => {
+    if (!currentUser?.id) return;
+
+    setIsConnecting(true);
+    try {
+      const authUrl = await OuraService.getAuthUrl(currentUser.id);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Error getting Oura auth URL:", error);
+      alert("Failed to start Oura connection. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnectOura = async () => {
+    if (!currentUser?.id) return;
+
+    setIsDisconnecting(true);
+    try {
+      await OuraService.disconnect(currentUser.id);
+      await loadOuraStatus();
+    } catch (error) {
+      console.error("Error disconnecting Oura:", error);
+      alert("Failed to disconnect Oura. Please try again.");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const handleSyncOura = async () => {
+    if (!currentUser?.id) return;
+
+    setIsSyncing(true);
+    setSyncMessage("Syncing activity data...");
+    try {
+      await OuraService.syncActivity(currentUser.id, 7);
+      setSyncMessage("Activity data synced successfully!");
+      setTimeout(() => setSyncMessage(""), 3000);
+    } catch (error) {
+      console.error("Error syncing Oura activity:", error);
+      setSyncMessage("Failed to sync activity data. Please try again.");
+      setTimeout(() => setSyncMessage(""), 5000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSave = () => {
     updateTimerDuration(timerValue);
@@ -118,8 +190,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* Oura Ring Integration Section */}
         <div className="border-t pt-6">
-          <div className="flex items-center mb-4">
-            <h3 className="text-lg font-medium">Oura Ring Integration</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <Activity className="w-5 h-5 mr-2 text-purple-500" />
+              <h3 className="text-lg font-medium">Oura Ring Integration</h3>
+            </div>
+            {/* Connection Status */}
+            <div className="flex items-center">
+              {ouraStatus?.connected ? (
+                <CheckCircle className="w-4 h-4 text-green-500 mr-1" />
+              ) : (
+                <XCircle className="w-4 h-4 text-red-500 mr-1" />
+              )}
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {ouraStatus?.connected ? "Connected" : "Not Connected"}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -127,6 +213,39 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               Connect your Oura Ring to automatically sync your activity. Data syncs periodically
               throughout the day.
             </p>
+
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
+              {!ouraStatus?.connected ? (
+                <button
+                  onClick={handleConnectOura}
+                  disabled={isConnecting}
+                  className="flex items-center px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Link className="w-4 h-4 mr-2" />
+                  {isConnecting ? "Connecting..." : "Connect Oura Ring"}
+                </button>
+              ) : (
+                <button
+                  onClick={handleDisconnectOura}
+                  disabled={isDisconnecting}
+                  className="flex items-center px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Unlink className="w-3 h-3 mr-1" />
+                  {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+                </button>
+              )}
+            </div>
+
+            {/* Sync Message */}
+            {syncMessage && (
+              <div
+                className={`text-sm p-2 rounded ${
+                  syncMessage.includes("successfully")
+                    ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
+                    : "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"
+                }`}>
+                {syncMessage}
+              </div>
+            )}
           </div>
         </div>
       </div>
