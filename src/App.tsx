@@ -5,6 +5,8 @@ import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
 import { FriendActivity } from "./components/FriendActivity";
 import { Friends } from "./components/Friends";
+import { HighFiveEffect } from "./components/HighFiveEffect";
+import { HighFiveNotification } from "./components/HighFiveNotification";
 import OuraCallback from "./components/OuraCallback";
 import PrivacyPolicy from "./components/PrivacyPolicy";
 import TermsOfService from "./components/TermsOfService";
@@ -35,6 +37,14 @@ function App() {
   const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
   const [showFriendRequestNotification, setShowFriendRequestNotification] = useState(false);
+  const [showHighFiveEffect, setShowHighFiveEffect] = useState(false);
+  const [highFiveNotifications, setHighFiveNotifications] = useState<
+    Array<{
+      id: string;
+      senderName: string;
+      activity: string;
+    }>
+  >([]);
 
   // Add ref to track if we've already fetched the profile for the current user
   const lastFetchedUserIdRef = useRef<string | null>(null);
@@ -168,6 +178,16 @@ function App() {
 
         // Set a flag to prevent sending another notification
         sessionStorage.setItem("openedFromNotification", "true");
+      }
+
+      // Handle high five notification
+      if (event.data.type === "HIGH_FIVE_FROM_NOTIFICATION") {
+        setShowHighFiveEffect(true);
+        // Show internal notification with data from the notification
+        const notificationData = event.data.notificationData;
+        if (notificationData?.friendName) {
+          addHighFiveNotification(notificationData.friendName, "your activity");
+        }
       }
 
       // Handle reset notification state message
@@ -318,6 +338,15 @@ function App() {
   const refreshPendingFriendRequests = useCallback(async () => {
     const count = await fetchPendingFriendRequests();
     setPendingFriendRequests(count);
+  }, []);
+
+  const addHighFiveNotification = useCallback((senderName: string, activity: string) => {
+    const id = Date.now().toString();
+    setHighFiveNotifications((prev) => [...prev, { id, senderName, activity }]);
+  }, []);
+
+  const removeHighFiveNotification = useCallback((id: string) => {
+    setHighFiveNotifications((prev) => prev.filter((notification) => notification.id !== id));
   }, []);
 
   const handleStartTimer = useCallback(() => {
@@ -836,6 +865,23 @@ function App() {
             </button>
           </div>
         )}
+
+        {/* High Five Effect */}
+        <HighFiveEffect
+          isActive={showHighFiveEffect}
+          onComplete={() => setShowHighFiveEffect(false)}
+        />
+
+        {/* High Five Notifications */}
+        {highFiveNotifications.map((notification, index) => (
+          <HighFiveNotification
+            key={notification.id}
+            senderName={notification.senderName}
+            activity={notification.activity}
+            onClose={() => removeHighFiveNotification(notification.id)}
+            index={index}
+          />
+        ))}
 
         {settings ? (
           <Routes>

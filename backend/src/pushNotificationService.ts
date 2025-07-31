@@ -32,6 +32,7 @@ export interface NotificationPayload {
   tag?: string;
   group?: string;
   requireInteraction?: boolean;
+  silent?: boolean;
   actions?: Array<{
     action: string;
     title: string;
@@ -160,9 +161,6 @@ class PushNotificationService {
       ).length;
       const failed = results.length - successful;
 
-      console.log(
-        `Push notification sent to user ${userId}: ${successful} successful, ${failed} failed`
-      );
       return successful > 0;
     } catch (error) {
       console.error("Error sending push notification:", error);
@@ -187,7 +185,6 @@ class PushNotificationService {
 
       if (result.statusCode === 410) {
         // Subscription is no longer valid, remove it
-        console.log("Removing invalid subscription:", subscription.endpoint);
         await this.removeSubscription(subscription.user_id, subscription.endpoint);
         return false;
       }
@@ -209,7 +206,6 @@ class PushNotificationService {
     // Check if user has timer expired notifications enabled
     const settings = await this.getUserNotificationSettings(userId);
     if (!settings.timer_expired) {
-      console.log(`Timer expired notifications disabled for user ${userId}`);
       return false;
     }
 
@@ -280,7 +276,7 @@ class PushNotificationService {
       body: `${friendName} wants to be your friend!`,
       icon: "/favicon.svg",
       badge: "/favicon.svg",
-      tag: "friend-request",
+      tag: "friend_request",
       requireInteraction: true,
       actions: [
         {
@@ -296,7 +292,33 @@ class PushNotificationService {
       data: {
         url: "/friends",
         timestamp: Date.now(),
-        type: "friend-request",
+        type: "friend_request",
+      },
+    };
+
+    return this.sendNotification(userId, payload);
+  }
+
+  async sendHighFiveNotification(userId: string, friendName: string): Promise<boolean> {
+    // Check if user has friend activity notifications enabled (high fives are a type of friend activity)
+    const settings = await this.getUserNotificationSettings(userId);
+    if (!settings.friend_activity) {
+      return false;
+    }
+
+    const payload: NotificationPayload = {
+      title: "", // Silent notification
+      body: "", // Silent notification
+      icon: "/favicon.svg",
+      badge: "/favicon.svg",
+      tag: "high_five",
+      group: "dicey-movements",
+      silent: true, // Make it silent
+      data: {
+        url: "/",
+        timestamp: Date.now(),
+        type: "high_five",
+        friendName,
       },
     };
 
@@ -319,12 +341,12 @@ class PushNotificationService {
       body: `${friendName} just completed ${activity}!`,
       icon: "/favicon.svg",
       badge: "/favicon.svg",
-      tag: "friend-activity",
+      tag: "friend_activity",
       requireInteraction: false,
       data: {
         url: "/friends",
         timestamp: Date.now(),
-        type: "friend-activity",
+        type: "friend_activity",
       },
     };
 

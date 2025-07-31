@@ -102,9 +102,25 @@ class NotificationService {
     }
 
     try {
-      // Wait for service worker to be ready (standard practice)
-      const registration = await navigator.serviceWorker.ready;
+      // Register/update service worker to ensure we have the latest version
+      const registration = await navigator.serviceWorker.register("/sw.js", {
+        updateViaCache: "none", // Force update from network
+      });
       this.registration = registration;
+
+      // Listen for service worker updates
+      registration.addEventListener("updatefound", () => {
+        console.log("NotificationService: Service worker update found");
+        const newWorker = registration.installing;
+        if (newWorker) {
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              console.log("NotificationService: New service worker installed, refreshing...");
+              window.location.reload();
+            }
+          });
+        }
+      });
 
       // Check if this is a fresh app launch
       await this.checkForFreshLaunch();
@@ -392,6 +408,40 @@ class NotificationService {
         error
       );
       // Don't re-throw - this is not critical for app functionality
+    }
+  }
+
+  async sendHighFiveNotification(toUserId: string, friendName: string): Promise<void> {
+    console.log("NotificationService: sendHighFiveNotification called for user:", toUserId);
+
+    try {
+      await api.fetch("/api/push/send", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: toUserId,
+          payload: {
+            type: "high_five",
+            title: "", // Silent notification
+            body: "", // Silent notification
+            icon: "/favicon.svg",
+            badge: "/favicon.svg",
+            tag: "high_five",
+            group: "dicey-movements",
+            silent: true, // Make it silent
+            data: {
+              url: "/",
+              timestamp: Date.now(),
+              type: "high_five",
+              friendName,
+            },
+          },
+        }),
+      });
+    } catch (error) {
+      console.warn(
+        "NotificationService: Failed to send high five notification (backend may be hibernated):",
+        error
+      );
     }
   }
 

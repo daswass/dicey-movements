@@ -360,6 +360,8 @@ app.post("/api/push/send", async (req, res) => {
         userId,
         payload.friendName
       );
+    } else if (payload.type === "high_five") {
+      success = await pushNotificationService.sendHighFiveNotification(userId, payload.friendName);
     } else {
       // Default to generic notification
       success = await pushNotificationService.sendNotification(userId, payload);
@@ -483,6 +485,60 @@ app.post("/api/workout/complete", async (req, res) => {
   } catch (error) {
     console.error("Error completing workout:", error);
     res.status(500).json({ error: "Failed to complete workout" });
+  }
+});
+
+app.post("/api/high-five/send", async (req, res) => {
+  try {
+    const { fromUserId, toUserId } = req.body;
+
+    if (!fromUserId || !toUserId) {
+      return res.status(400).json({ error: "fromUserId and toUserId are required" });
+    }
+
+    // Get sender's profile
+    const { data: senderProfile, error: senderError } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", fromUserId)
+      .single();
+
+    if (senderError) {
+      console.error("Error fetching sender profile:", senderError);
+      return res.status(500).json({ error: "Failed to fetch sender profile" });
+    }
+
+    const senderName = `${senderProfile.first_name} ${senderProfile.last_name}`;
+
+    // Verify they are friends
+    const { data: friendship, error: friendshipError } = await supabase
+      .from("friends")
+      .select("id")
+      .or(
+        `and(user_id.eq.${fromUserId},friend_id.eq.${toUserId}),and(user_id.eq.${toUserId},friend_id.eq.${fromUserId})`
+      )
+      .eq("status", "accepted")
+      .single();
+
+    if (friendshipError || !friendship) {
+      return res.status(403).json({ error: "Users must be friends to send high fives" });
+    }
+
+    // Send high five notification
+    const success = await pushNotificationService.sendHighFiveNotification(toUserId, senderName);
+
+    if (success) {
+      res.json({
+        success: true,
+        message: "High five sent successfully",
+        senderName,
+      });
+    } else {
+      res.status(500).json({ error: "Failed to send high five notification" });
+    }
+  } catch (error) {
+    console.error("Error sending high five:", error);
+    res.status(500).json({ error: "Failed to send high five" });
   }
 });
 
