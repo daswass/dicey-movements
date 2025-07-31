@@ -290,7 +290,6 @@ export class AchievementService {
         .single();
 
       const achievements = profile?.stats?.achievements || [];
-      console.log("Current achievements from DB:", achievements);
       return achievements;
     } catch (error) {
       console.error("Error getting current achievements:", error);
@@ -304,9 +303,6 @@ export class AchievementService {
   static async getAchievementProgress(userId: string): Promise<AchievementProgress[]> {
     const userStats = await this.getUserStats(userId);
     const currentAchievements = await this.getCurrentAchievements(userId);
-
-    console.log("User stats:", userStats);
-    console.log("Current achievements:", currentAchievements);
 
     const progress = achievements.map((achievement) => {
       const unlocked = currentAchievements.find((a) => a.id === achievement.id);

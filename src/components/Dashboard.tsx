@@ -157,9 +157,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       // Clear notification flags for new timer session
       sessionStorage.removeItem("openedFromNotification");
       resetNotificationFlags();
-      onStartTimer();
       setLatestSession(null);
-      setIsRollAndStartMode(false); // Reset roll and start mode
+      setIsRollAndStartMode(true); // Enable roll and start mode to trigger dice rolling
     }, [
       latestSession,
       user?.id,

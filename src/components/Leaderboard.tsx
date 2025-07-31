@@ -98,6 +98,8 @@ const LeaderboardComponent: React.FC = () => {
   const [retryTrigger, setRetryTrigger] = useState(0);
   const isMountedRef = useRef(true);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
+  const maxRetries = 5;
   const currentChannelRef = useRef<any>(null);
   const isSettingUpRef = useRef(false);
   const hasInitializedRef = useRef(false);
@@ -324,9 +326,6 @@ const LeaderboardComponent: React.FC = () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
-      if (debouncedRetryRef.current) {
-        clearTimeout(debouncedRetryRef.current);
-      }
       if (currentChannelRef.current) {
         try {
           supabase.removeChannel(currentChannelRef.current);
@@ -370,12 +369,6 @@ const LeaderboardComponent: React.FC = () => {
     // If component is fully initialized and we're just switching tabs, don't reinitialize
     if (isFullyInitializedRef.current && hasInitializedRef.current) {
       return;
-    }
-
-    // Clear any pending debounced retry
-    if (debouncedRetryRef.current) {
-      clearTimeout(debouncedRetryRef.current);
-      debouncedRetryRef.current = null;
     }
 
     const setupChannel = async () => {
@@ -425,7 +418,7 @@ const LeaderboardComponent: React.FC = () => {
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "activities" },
-            (payload) => {
+            (payload: any) => {
               if (scoreType !== "totalSteps") {
                 // Use a timeout to ensure we're calling the latest function
                 setTimeout(() => {
@@ -439,7 +432,7 @@ const LeaderboardComponent: React.FC = () => {
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "oura_activities" },
-            (payload) => {
+            (payload: any) => {
               if (scoreType === "totalSteps") {
                 // Use a timeout to ensure we're calling the latest function
                 setTimeout(() => {
@@ -451,23 +444,46 @@ const LeaderboardComponent: React.FC = () => {
             }
           );
 
-        // Subscribe to the channel
-        const subscription = channel.subscribe((status) => {
+        // Subscribe to the channel with improved error handling
+        const subscription = channel.subscribe((status: any) => {
           if (!isMountedRef.current) return;
           setChannelStatus(status);
-          if (status === "CHANNEL_ERROR") {
+
+          if (status === "SUBSCRIBED") {
+            console.log(`Channel ${channelName} successfully subscribed`);
+            globalSubscriptionTracker.set(channelName, true);
+          } else if (status === "CHANNEL_ERROR") {
             console.error(`Channel ${channelName} encountered an error`);
             // Remove from global tracker on error
             globalSubscriptionTracker.delete(channelName);
-            // Debounced retry connection after 5 seconds
-            if (debouncedRetryRef.current) {
-              clearTimeout(debouncedRetryRef.current);
-            }
-            debouncedRetryRef.current = setTimeout(() => {
+            // Simple retry after 3 seconds
+            setTimeout(() => {
               if (isMountedRef.current) {
+                console.log(`Retrying connection for channel ${channelName}`);
                 setRetryTrigger((prev) => prev + 1);
               }
-            }, 5000);
+            }, 3000);
+          } else if (status === "TIMED_OUT") {
+            console.warn(`Channel ${channelName} timed out`);
+            setChannelStatus("timeout");
+            // Simple retry after 3 seconds
+            setTimeout(() => {
+              if (isMountedRef.current) {
+                console.log(`Retrying connection for channel ${channelName} after timeout`);
+                setRetryTrigger((prev) => prev + 1);
+              }
+            }, 3000);
+          } else if (status === "CLOSED") {
+            console.log(`Channel ${channelName} closed`);
+            setChannelStatus("closed");
+            globalSubscriptionTracker.delete(channelName);
+            // Simple retry after 3 seconds
+            setTimeout(() => {
+              if (isMountedRef.current) {
+                console.log(`Retrying connection for channel ${channelName} after close`);
+                setRetryTrigger((prev) => prev + 1);
+              }
+            }, 3000);
           }
         });
 
@@ -481,6 +497,14 @@ const LeaderboardComponent: React.FC = () => {
         setChannelStatus("error");
         globalSubscriptionTracker.delete(channelName);
         isSettingUpRef.current = false;
+
+        // Simple retry after 3 seconds
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            console.log(`Retrying channel setup for ${channelName}`);
+            setRetryTrigger((prev) => prev + 1);
+          }
+        }, 3000);
       }
     };
 
@@ -541,19 +565,29 @@ const LeaderboardComponent: React.FC = () => {
           <h2 className="text-2xl font-bold">Leaderboard</h2>
           <div className="flex items-center space-x-2">
             <div
-              className={`w-2 h-2 rounded-full ${
+              className={`w-2 h-2 rounded-full transition-colors duration-300 ${
                 channelStatus === "SUBSCRIBED"
                   ? "bg-green-500"
                   : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
                   ? "bg-red-500"
+                  : channelStatus === "TIMED_OUT" || channelStatus === "timeout"
+                  ? "bg-yellow-500"
+                  : channelStatus === "CLOSED" || channelStatus === "closed"
+                  ? "bg-gray-500"
                   : "bg-yellow-500"
               }`}
             />
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-gray-400 transition-opacity duration-300">
               {channelStatus === "SUBSCRIBED"
                 ? "Live"
                 : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
-                ? "Error"
+                ? "Reconnecting..."
+                : channelStatus === "TIMED_OUT" || channelStatus === "timeout"
+                ? "Reconnecting..."
+                : channelStatus === "CLOSED" || channelStatus === "closed"
+                ? "Reconnecting..."
+                : channelStatus === "connecting" || channelStatus === "disconnected"
+                ? "Connecting..."
                 : ""}
             </span>
           </div>
