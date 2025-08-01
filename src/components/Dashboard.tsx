@@ -572,7 +572,19 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const mainContent = useMemo(() => {
       if ((timerComplete && !currentWorkoutComplete) || isRollAndStartMode) {
         return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <Settings size={20} className="text-gray-500 dark:text-gray-400" />
+              {/* Master/Slave indicator dot */}
+              <div
+                className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                  isMaster ? "bg-green-500" : "bg-blue-500"
+                }`}
+                title={isMaster ? "Master Device" : "Slave Device"}
+              />
+            </button>
             <h2 className="text-xl font-semibold mb-4">Roll the Dice</h2>
             <DiceRoller
               key={`dice-roller-${latestSession ? "completed" : "ready"}`}

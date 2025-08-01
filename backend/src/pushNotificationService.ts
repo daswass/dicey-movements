@@ -299,7 +299,11 @@ class PushNotificationService {
     return this.sendNotification(userId, payload);
   }
 
-  async sendHighFiveNotification(userId: string, friendName: string): Promise<boolean> {
+  async sendHighFiveNotification(
+    userId: string,
+    friendName: string,
+    activity?: string
+  ): Promise<boolean> {
     // Check if user has friend activity notifications enabled (high fives are a type of friend activity)
     const settings = await this.getUserNotificationSettings(userId);
     if (!settings.friend_activity) {
@@ -319,8 +323,11 @@ class PushNotificationService {
         timestamp: Date.now(),
         type: "high_five",
         friendName,
+        activity, // Include activity information if provided
       },
     };
+
+    console.log(`Sending high five notification to [${userId}]: ${friendName} for ${activity}`);
 
     return this.sendNotification(userId, payload);
   }

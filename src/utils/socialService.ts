@@ -1,6 +1,6 @@
-import { UserProfile, LeaderboardEntry, FriendActivity } from "../types/social";
-import { supabase } from "./supabaseClient";
+import { FriendActivity, LeaderboardEntry, UserProfile } from "../types/social";
 import { api } from "./api";
+import { supabase } from "./supabaseClient";
 
 export const getUserLocation = async (): Promise<{
   city: string;
@@ -191,7 +191,7 @@ export const fetchPendingFriendRequests = async (): Promise<number> => {
   }
 };
 
-export const sendHighFive = async (toUserId: string): Promise<boolean> => {
+export const sendHighFive = async (toUserId: string, activity?: string): Promise<boolean> => {
   try {
     const {
       data: { user },
@@ -206,6 +206,7 @@ export const sendHighFive = async (toUserId: string): Promise<boolean> => {
       body: JSON.stringify({
         fromUserId: user.id,
         toUserId,
+        activity,
       }),
     });
 
@@ -221,3 +222,34 @@ export const sendHighFive = async (toUserId: string): Promise<boolean> => {
     return false;
   }
 };
+
+// Console function to test high fives via API
+export const testHighFive = async (userId: string, activity?: string): Promise<boolean> => {
+  try {
+    // Get current user for the fromUserId
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("testHighFive: User not authenticated");
+      return false;
+    }
+
+    const response = await api.fetch("/api/high-five/send", {
+      method: "POST",
+      body: JSON.stringify({
+        fromUserId: user.id,
+        toUserId: userId,
+        activity,
+      }),
+    });
+
+    return response.success === true;
+  } catch (error) {
+    console.error("testHighFive: Error sending test high five:", error);
+    return false;
+  }
+};
+
+// Make it available globally for console access
+(window as any).testHighFive = testHighFive;

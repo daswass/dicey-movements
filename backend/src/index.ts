@@ -432,10 +432,6 @@ app.post("/api/workout/complete", async (req, res) => {
       return settings.friend_activity === true;
     });
 
-    console.log(
-      `Found ${friendsWithNotificationsEnabled.length} friends with friend activity notifications enabled out of ${friends.length} total friends`
-    );
-
     // Return early if no friends have notifications enabled
     if (friendsWithNotificationsEnabled.length === 0) {
       console.log(
@@ -492,7 +488,7 @@ app.post("/api/workout/complete", async (req, res) => {
 
 app.post("/api/high-five/send", async (req, res) => {
   try {
-    const { fromUserId, toUserId } = req.body;
+    const { fromUserId, toUserId, activity } = req.body;
 
     if (!fromUserId || !toUserId) {
       return res.status(400).json({ error: "fromUserId and toUserId are required" });
@@ -513,21 +509,27 @@ app.post("/api/high-five/send", async (req, res) => {
     const senderName = `${senderProfile.first_name} ${senderProfile.last_name}`;
 
     // Verify they are friends
-    const { data: friendship, error: friendshipError } = await supabase
-      .from("friends")
-      .select("id")
-      .or(
-        `and(user_id.eq.${fromUserId},friend_id.eq.${toUserId}),and(user_id.eq.${toUserId},friend_id.eq.${fromUserId})`
-      )
-      .eq("status", "accepted")
-      .single();
+    if (fromUserId !== toUserId) {
+      const { data: friendship, error: friendshipError } = await supabase
+        .from("friends")
+        .select("id")
+        .or(
+          `and(user_id.eq.${fromUserId},friend_id.eq.${toUserId}),and(user_id.eq.${toUserId},friend_id.eq.${fromUserId})`
+        )
+        .eq("status", "accepted")
+        .single();
 
-    if (friendshipError || !friendship) {
-      return res.status(403).json({ error: "Users must be friends to send high fives" });
+      if (friendshipError || !friendship) {
+        return res.status(403).json({ error: "Users must be friends to send high fives" });
+      }
     }
 
     // Send high five notification
-    const success = await pushNotificationService.sendHighFiveNotification(toUserId, senderName);
+    const success = await pushNotificationService.sendHighFiveNotification(
+      toUserId,
+      senderName,
+      activity
+    );
 
     if (success) {
       res.json({

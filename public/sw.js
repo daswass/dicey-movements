@@ -1,7 +1,7 @@
 // Service Worker for Push Notifications
 // This service worker follows standard practices
 
-const CACHE_NAME = "dicey-movements-v16";
+const CACHE_NAME = "dicey-movements-v19";
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
@@ -80,7 +80,7 @@ self.addEventListener("push", async (event) => {
       return;
     }
 
-    // Handle silent high five notifications
+    // Handle silent high five notifications (even if silent)
     if (notificationData.data && notificationData.data.type === "high_five") {
       // Send message to all clients to trigger high five effects
       clients.matchAll({ type: "window" }).then((clientList) => {
@@ -105,7 +105,11 @@ self.addEventListener("push", async (event) => {
       return;
     }
 
-    if (notificationData.silent === true) {
+    // Handle other silent notifications (but not high fives)
+    if (
+      notificationData.silent === true &&
+      (!notificationData.data || notificationData.data.type !== "high_five")
+    ) {
       return;
     }
 
@@ -169,6 +173,7 @@ self.addEventListener("notificationclick", (event) => {
                       friendName: notificationData.friendName,
                       fromNotificationAction: true,
                       friendId: notificationData.friendId, // Include friend ID for sending high five back
+                      activity: notificationData.activity, // Include activity information
                     },
                   });
                 });
@@ -182,6 +187,7 @@ self.addEventListener("notificationclick", (event) => {
                   friendName: notificationData.friendName,
                   fromNotificationAction: true,
                   friendId: notificationData.friendId, // Include friend ID for sending high five back
+                  activity: notificationData.activity, // Include activity information
                 },
               });
             });

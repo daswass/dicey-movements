@@ -127,17 +127,6 @@ function App() {
       }
     };
 
-    // Handle service worker updates
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        console.log("App.tsx: Service worker updated");
-      });
-
-      navigator.serviceWorker.addEventListener("updatefound", () => {
-        console.log("App.tsx: Service worker update found");
-      });
-    }
-
     initializeNotifications();
   }, []);
 
@@ -187,12 +176,17 @@ function App() {
         // Show internal notification with data from the notification
         const notificationData = event.data.notificationData;
         if (notificationData?.friendName) {
-          addHighFiveNotification(notificationData.friendName, "your activity");
+          // Use the activity from the notification if available, otherwise use generic text
+          const activity = notificationData.activity || "your activity";
+          addHighFiveNotification(notificationData.friendName, activity);
 
           // If this is from a notification action (friend activity), send a high five TO the friend
           if (notificationData.fromNotificationAction && notificationData.friendId) {
             try {
-              const success = await sendHighFive(notificationData.friendId);
+              const success = await sendHighFive(
+                notificationData.friendId,
+                notificationData.activity
+              );
               if (success) {
                 console.log(
                   "App.tsx: High five sent successfully to friend via notification action"
@@ -314,7 +308,7 @@ function App() {
       setSettings((prevSettings) => {
         const defaultAppSettings: AppSettings = {
           notificationsEnabled: userProfile.notifications_enabled ?? true,
-          darkMode: window.matchMedia("(prefers-color-scheme: dark)").matches,
+          darkMode: true, // Always dark mode
         };
 
         if (prevSettings === null) {

@@ -102,25 +102,13 @@ class NotificationService {
     }
 
     try {
-      // Register/update service worker to ensure we have the latest version
-      const registration = await navigator.serviceWorker.register("/sw.js", {
-        updateViaCache: "none", // Force update from network
-      });
+      // Get existing service worker registration instead of creating a new one
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) {
+        console.warn("NotificationService: No service worker registration found");
+        return false;
+      }
       this.registration = registration;
-
-      // Listen for service worker updates
-      registration.addEventListener("updatefound", () => {
-        console.log("NotificationService: Service worker update found");
-        const newWorker = registration.installing;
-        if (newWorker) {
-          newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              console.log("NotificationService: New service worker installed, refreshing...");
-              window.location.reload();
-            }
-          });
-        }
-      });
 
       // Check if this is a fresh app launch
       await this.checkForFreshLaunch();
