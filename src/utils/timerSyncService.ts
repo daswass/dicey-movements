@@ -18,6 +18,8 @@ class TimerSyncService {
   private syncInterval: NodeJS.Timeout | null = null;
   private isMaster: boolean = false;
   private lastSyncTime: string | null = null;
+  private realtimeSubscription: any = null;
+  private masterStatusCallbacks: Set<(isMaster: boolean) => void> = new Set();
 
   constructor() {
     this.deviceId = this.generateDeviceId();
@@ -124,6 +126,12 @@ class TimerSyncService {
   // Transfer master to this device
   async becomeMaster(): Promise<boolean> {
     try {
+      // Prevent redundant calls - if already master, don't do anything
+      if (this.isMaster) {
+        console.log("TimerSyncService: Already master, skipping becomeMaster call");
+        return true;
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -154,6 +162,7 @@ class TimerSyncService {
       this.isMaster = true;
       this.lastSyncTime = now;
       console.log("TimerSyncService: Became master");
+      this.notifyMasterStatusChange(true);
       return true;
     } catch (error) {
       console.error("TimerSyncService: Error becoming master:", error);
@@ -193,49 +202,102 @@ class TimerSyncService {
 
   // Start real-time subscription for timer updates
   startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 5000): void {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
+    // Prevent multiple subscriptions
+    if (this.realtimeSubscription || this.syncInterval) {
+      return;
     }
 
-    // Fallback polling with longer interval (5 seconds instead of 2)
+    // Don't get initial state here - let the normal initialization flow handle it
+
+    // Set up real-time subscription
+    this.setupRealtimeSubscription(onStateChange).catch((error) => {
+      console.error("TimerSyncService: Error setting up real-time subscription:", error);
+    });
+
+    // Fallback polling as backup (much longer interval)
     this.syncInterval = setInterval(async () => {
       const state = await this.getTimerState();
       if (state && state.lastUpdated !== this.lastSyncTime) {
+        console.log("TimerSyncService: Fallback polling detected change");
         this.handleStateChange(state, onStateChange);
       }
-    }, intervalMs);
+    }, 30000); // 30 seconds as backup
+  }
 
-    console.log("TimerSyncService: Started polling for timer updates (5s interval)");
+  private async setupRealtimeSubscription(
+    onStateChange: (state: TimerState) => void
+  ): Promise<void> {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      this.realtimeSubscription = supabase
+        .channel(`timer-sync-${user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles",
+            filter: `id=eq.${user.id}`,
+          },
+          (payload) => {
+            const newData = payload.new as any;
+            const state: TimerState = {
+              masterDeviceId: newData.timer_master_device_id,
+              startTime: newData.timer_start_time,
+              duration: newData.timer_duration || 0,
+              lastUpdated: newData.timer_last_updated,
+            };
+
+            this.handleStateChange(state, onStateChange);
+          }
+        )
+        .subscribe((status) => {
+          console.log("TimerSyncService: Real-time subscription status:", status);
+        });
+    } catch (error) {
+      console.error("TimerSyncService: Error setting up real-time subscription:", error);
+    }
   }
 
   private handleStateChange(state: TimerState, onStateChange: (state: TimerState) => void): void {
-    console.log("TimerSyncService: State changed, calling onStateChange:", {
-      masterDeviceId: state.masterDeviceId,
-      startTime: state.startTime,
-      duration: state.duration,
-      isMaster: this.isMaster,
-      deviceId: this.deviceId,
-    });
+    // Prevent duplicate processing of the same state
+    if (state.lastUpdated === this.lastSyncTime) {
+      return;
+    }
+
     this.lastSyncTime = state.lastUpdated;
 
     // Check if we're still the master
     const wasMaster = this.isMaster;
     this.isMaster = state.masterDeviceId === this.deviceId;
 
-    // If we were master but are no longer master, log it
-    if (wasMaster && !this.isMaster) {
-      console.log("TimerSyncService: No longer master, another device took control");
+    if (wasMaster !== this.isMaster) {
+      this.notifyMasterStatusChange(this.isMaster);
     }
 
     onStateChange(state);
   }
 
   stopPolling(): void {
+    // Stop polling interval
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
-    console.log("TimerSyncService: Stopped polling");
+
+    // Stop real-time subscription
+    if (this.realtimeSubscription) {
+      try {
+        supabase.removeChannel(this.realtimeSubscription);
+      } catch (error) {
+        console.warn("TimerSyncService: Error removing channel:", error);
+      }
+      this.realtimeSubscription = null;
+    }
   }
 
   async isDeviceMaster(): Promise<boolean> {
@@ -267,6 +329,27 @@ class TimerSyncService {
 
   getDeviceId(): string {
     return this.deviceId;
+  }
+
+  // Subscribe to master status changes
+  onMasterStatusChange(callback: (isMaster: boolean) => void): () => void {
+    this.masterStatusCallbacks.add(callback);
+
+    // Return unsubscribe function
+    return () => {
+      this.masterStatusCallbacks.delete(callback);
+    };
+  }
+
+  // Notify all master status callbacks
+  private notifyMasterStatusChange(isMaster: boolean): void {
+    this.masterStatusCallbacks.forEach((callback) => {
+      try {
+        callback(isMaster);
+      } catch (error) {
+        console.error("TimerSyncService: Error in master status callback:", error);
+      }
+    });
   }
 }
 

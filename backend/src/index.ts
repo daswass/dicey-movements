@@ -353,7 +353,8 @@ app.post("/api/push/send", async (req, res) => {
       success = await pushNotificationService.sendFriendActivityNotification(
         userId,
         payload.friendName,
-        payload.activity
+        payload.activity,
+        payload.friendId
       );
     } else if (payload.type === "friend_request") {
       success = await pushNotificationService.sendFriendRequestNotification(
@@ -457,7 +458,8 @@ app.post("/api/workout/complete", async (req, res) => {
         const success = await pushNotificationService.sendFriendActivityNotification(
           friend.id,
           userName,
-          activity
+          activity,
+          userId // Pass the original user's ID as the friendId for the high five action
         );
         return { userId: friend.id, success };
       } catch (error) {

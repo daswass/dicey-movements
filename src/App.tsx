@@ -19,6 +19,7 @@ import {
   fetchPendingFriendRequests,
   getUserLocation,
   updateUserLocation,
+  sendHighFive,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
 import { timerSyncService, type TimerState } from "./utils/timerSyncService";
@@ -148,7 +149,7 @@ function App() {
 
   // Listen for timer completion from notification clicks
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (event.data.type === "TIMER_COMPLETE_FROM_NOTIFICATION") {
         console.log("App.tsx: Timer complete message received from notification");
 
@@ -187,6 +188,25 @@ function App() {
         const notificationData = event.data.notificationData;
         if (notificationData?.friendName) {
           addHighFiveNotification(notificationData.friendName, "your activity");
+
+          // If this is from a notification action (friend activity), send a high five TO the friend
+          if (notificationData.fromNotificationAction && notificationData.friendId) {
+            try {
+              const success = await sendHighFive(notificationData.friendId);
+              if (success) {
+                console.log(
+                  "App.tsx: High five sent successfully to friend via notification action"
+                );
+              } else {
+                console.warn("App.tsx: Failed to send high five to friend via notification action");
+              }
+            } catch (error) {
+              console.error(
+                "App.tsx: Error sending high five to friend via notification action:",
+                error
+              );
+            }
+          }
         }
       }
 
@@ -501,6 +521,8 @@ function App() {
 
   // Stop notifications when user interacts with the page
   useEffect(() => {
+    let interactionTimeout: NodeJS.Timeout | null = null;
+
     const handleUserInteraction = () => {
       if (isTitleFlashing) {
         stopTimerNotifications();
@@ -508,8 +530,15 @@ function App() {
 
       // Transfer master control if user interacts with timer on slave device
       if (isTimerActive && !timerSyncService.isDeviceMasterSync()) {
-        console.log("App.tsx: User interaction on slave device, becoming master");
-        timerSyncService.becomeMaster();
+        // Debounce the master transition to prevent rapid successive calls
+        if (interactionTimeout) {
+          clearTimeout(interactionTimeout);
+        }
+
+        interactionTimeout = setTimeout(() => {
+          console.log("App.tsx: User interaction on slave device, becoming master");
+          timerSyncService.becomeMaster();
+        }, 100); // 100ms debounce
       }
     };
 
@@ -520,6 +549,9 @@ function App() {
     document.addEventListener("scroll", handleUserInteraction);
 
     return () => {
+      if (interactionTimeout) {
+        clearTimeout(interactionTimeout);
+      }
       document.removeEventListener("click", handleUserInteraction);
       document.removeEventListener("keydown", handleUserInteraction);
       document.removeEventListener("touchstart", handleUserInteraction);
@@ -605,8 +637,6 @@ function App() {
   // Handle timer sync state changes
   useEffect(() => {
     const handleTimerStateChange = (state: TimerState) => {
-      console.log("App.tsx: Timer state changed:", state);
-
       if (state.startTime && !isTimerActive && state.duration > 0) {
         console.log("App.tsx: Timer started via sync");
         const startTime = new Date(state.startTime);

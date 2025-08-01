@@ -4,8 +4,11 @@ import { getExerciseById } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementService } from "../utils/achievementService";
+import { activitySyncService } from "../utils/activitySyncService";
 import { api } from "../utils/api";
+import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
+import { timerSyncService } from "../utils/timerSyncService";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
@@ -14,8 +17,6 @@ import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
-import { notificationService } from "../utils/notificationService";
-import { timerSyncService } from "../utils/timerSyncService";
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -66,7 +67,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const [history, setHistory] = useState<Activity[]>([]);
     const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
     const [showSettings, setShowSettings] = useState(false);
-    const [showHighFiveModal, setShowHighFiveModal] = useState(false);
+    const [showThatsLikeYouModal, setShowThatsLikeYouModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState<{
       show: boolean;
       type: "game" | "multipliers" | null;
@@ -84,6 +85,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     // Add state for tracking master/slave status
     const [isMaster, setIsMaster] = useState(false);
+
+    // Add state for tracking workout completion loading
+    const [isCompletingWorkout, setIsCompletingWorkout] = useState(false);
 
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
@@ -105,10 +109,18 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       // Check immediately
       checkMasterStatus();
 
-      // Set up interval to check periodically (5 seconds instead of 1)
-      const interval = setInterval(checkMasterStatus, 5000);
+      // Subscribe to real-time master status changes
+      const unsubscribe = timerSyncService.onMasterStatusChange((isMaster) => {
+        setIsMaster(isMaster);
+      });
 
-      return () => clearInterval(interval);
+      // Fallback polling (much less frequent since we have real-time)
+      const interval = setInterval(checkMasterStatus, 30000); // 30 seconds
+
+      return () => {
+        unsubscribe();
+        clearInterval(interval);
+      };
     }, []);
 
     useEffect(() => {
@@ -155,6 +167,27 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       if (user) fetchHistory();
     }, [user?.id, fetchHistory]);
 
+    // Subscribe to activity sync service for real-time workout updates
+    useEffect(() => {
+      if (!user) return;
+
+      const unsubscribe = activitySyncService.subscribe((activity) => {
+        // Only sync on non-master devices since master already has the updated data
+        if (!isMaster) {
+          const exerciseName = activity.exercise_name || "exercise";
+          const reps = activity.reps || 0;
+
+          // Show a subtle notification
+          console.log(`Dashboard: Syncing ${reps} ${exerciseName} from another device`);
+
+          // Refresh history to get updated workout data
+          fetchHistory();
+        }
+      });
+
+      return unsubscribe;
+    }, [user?.id, fetchHistory, isMaster]);
+
     const handleTimerComplete = useCallback(() => {
       setTimerComplete(true);
       setCurrentWorkoutComplete(false);
@@ -193,95 +226,107 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     ]);
 
     const handleWorkoutComplete = useCallback(async () => {
-      setShowHighFiveModal(true);
+      // Prevent multiple clicks
+      if (isCompletingWorkout) return;
 
-      setTimeout(() => {
-        setShowHighFiveModal(false);
-      }, 2000);
+      setIsCompletingWorkout(true);
 
-      if (!latestSession || !user) return;
-
-      // Clear timer notifications when completing exercise
       try {
-        console.log("Dashboard: Clearing timer notifications on workout complete");
-        notificationService.clearAllNotifications(); // Clear all notifications first
-        await notificationService.sendClearNotificationMessage("timer-notification");
+        setShowThatsLikeYouModal(true);
+
+        setTimeout(() => {
+          setShowThatsLikeYouModal(false);
+        }, 2000);
+
+        if (!latestSession || !user) return;
+
+        // Clear timer notifications when completing exercise
+        try {
+          console.log("Dashboard: Clearing timer notifications on workout complete");
+          notificationService.clearAllNotifications(); // Clear all notifications first
+          await notificationService.sendClearNotificationMessage("timer-notification");
+        } catch (error) {
+          console.error("Dashboard: Error clearing notifications:", error);
+        }
+
+        // Get the current (derived) multiplier for this exercise before logging it in activity
+        const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
+
+        const newActivity = {
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+          exercise_id: latestSession.exercise.id,
+          exercise_name: latestSession.exercise.name,
+          reps: latestSession.reps,
+          multiplier: currentMultiplier, // Store the multiplier *at the time of this activity*
+          dice_roll: latestSession.diceRoll,
+        };
+
+        const { error } = await supabase.from("activities").insert(newActivity);
+        if (error) {
+          console.error("Dashboard: Error inserting activity:", error);
+          setHistory((prevHistory) => prevHistory.slice(1)); // Revert locally if insert fails
+        } else {
+          await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
+
+          // Refresh user profile to get updated streak data
+          try {
+            const { data: updatedProfile, error: profileError } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", user.id)
+              .single();
+
+            if (updatedProfile && !profileError) {
+              setUserProfile({
+                ...updatedProfile,
+                timer_duration: updatedProfile.timer_duration || 300,
+              });
+            } else {
+              console.error("Dashboard: Error refreshing user profile:", profileError);
+            }
+          } catch (profileError) {
+            console.error("Dashboard: Exception refreshing user profile:", profileError);
+          }
+
+          // Check for achievements after successful activity insertion
+          try {
+            // Check single workout achievements
+            const singleWorkoutAchievements =
+              await AchievementService.checkSingleWorkoutAchievements(user.id, latestSession.reps);
+
+            // Check general achievements
+            const generalAchievements = await AchievementService.checkAndUnlockAchievements(
+              user.id
+            );
+
+            // Combine and show notifications
+            const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
+            if (allNewAchievements.length > 0) {
+              setUnlockedAchievements(allNewAchievements);
+            }
+          } catch (error) {
+            console.error("Error checking achievements:", error);
+          }
+
+          // Send friend activity notification
+          try {
+            await api.completeWorkout(
+              user.id,
+              latestSession.exercise.name,
+              latestSession.reps,
+              multipliers
+            );
+          } catch (error) {
+            console.error("Error completing workout:", error);
+          }
+        }
       } catch (error) {
-        console.error("Dashboard: Error clearing notifications:", error);
-      }
-
-      // Get the current (derived) multiplier for this exercise before logging it in activity
-      const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
-
-      const newActivity = {
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        timestamp: new Date().toISOString(),
-        exercise_id: latestSession.exercise.id,
-        exercise_name: latestSession.exercise.name,
-        reps: latestSession.reps,
-        multiplier: currentMultiplier, // Store the multiplier *at the time of this activity*
-        dice_roll: latestSession.diceRoll,
-      };
-
-      const { error } = await supabase.from("activities").insert(newActivity);
-      if (error) {
-        console.error("Dashboard: Error inserting activity:", error);
-        setHistory((prevHistory) => prevHistory.slice(1)); // Revert locally if insert fails
-      } else {
-        await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
-
-        // Refresh user profile to get updated streak data
-        try {
-          const { data: updatedProfile, error: profileError } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", user.id)
-            .single();
-
-          if (updatedProfile && !profileError) {
-            setUserProfile({
-              ...updatedProfile,
-              timer_duration: updatedProfile.timer_duration || 300,
-            });
-          } else {
-            console.error("Dashboard: Error refreshing user profile:", profileError);
-          }
-        } catch (profileError) {
-          console.error("Dashboard: Exception refreshing user profile:", profileError);
-        }
-
-        // Check for achievements after successful activity insertion
-        try {
-          // Check single workout achievements
-          const singleWorkoutAchievements = await AchievementService.checkSingleWorkoutAchievements(
-            user.id,
-            latestSession.reps
-          );
-
-          // Check general achievements
-          const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
-
-          // Combine and show notifications
-          const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
-          if (allNewAchievements.length > 0) {
-            setUnlockedAchievements(allNewAchievements);
-          }
-        } catch (error) {
-          console.error("Error checking achievements:", error);
-        }
-
-        // Send friend activity notification
-        try {
-          await api.completeWorkout(
-            user.id,
-            latestSession.exercise.name,
-            latestSession.reps,
-            multipliers
-          );
-        } catch (error) {
-          console.error("Error completing workout:", error);
-        }
+        console.error("Dashboard: Error in handleWorkoutComplete:", error);
+      } finally {
+        // Always reset the loading state
+        setIsCompletingWorkout(false);
       }
 
       setCurrentWorkoutComplete(false);
@@ -587,8 +632,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             <h2 className="text-xl font-semibold">Current Workout</h2>
             <button
               onClick={handleWorkoutComplete}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors">
-              Complete Exercise
+              disabled={isCompletingWorkout}
+              className={`px-4 py-2 text-white rounded-lg transition-colors ${
+                isCompletingWorkout
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-green-500 hover:bg-green-600"
+              }`}>
+              {isCompletingWorkout ? "Completing..." : "Complete Exercise"}
             </button>
           </div>
           <ExerciseDisplay session={latestSession} onComplete={handleWorkoutComplete} />
@@ -750,7 +800,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           </div>
         )}
 
-        {showHighFiveModal && (
+        {showThatsLikeYouModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center">
               <h2 className="text-4xl mb-4">🙌</h2>

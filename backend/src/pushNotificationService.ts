@@ -328,7 +328,8 @@ class PushNotificationService {
   async sendFriendActivityNotification(
     userId: string,
     friendName: string,
-    activity: string
+    activity: string,
+    friendId?: string
   ): Promise<boolean> {
     // Check if user has friend activity notifications enabled
     const settings = await this.getUserNotificationSettings(userId);
@@ -343,10 +344,20 @@ class PushNotificationService {
       badge: "/favicon.svg",
       tag: "friend_activity",
       requireInteraction: false,
+      actions: [
+        {
+          action: "high_five",
+          title: "✋ High Five",
+          icon: "/favicon.svg",
+        },
+      ],
       data: {
         url: "/friends",
         timestamp: Date.now(),
         type: "friend_activity",
+        friendName,
+        activity,
+        friendId, // Include friend ID for high five action
       },
     };
 

@@ -190,3 +190,34 @@ export const fetchPendingFriendRequests = async (): Promise<number> => {
     return 0;
   }
 };
+
+export const sendHighFive = async (toUserId: string): Promise<boolean> => {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("sendHighFive: User not authenticated");
+      return false;
+    }
+
+    const response = await api.fetch("/api/high-five/send", {
+      method: "POST",
+      body: JSON.stringify({
+        fromUserId: user.id,
+        toUserId,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("sendHighFive: Failed to send high five:", response.statusText);
+      return false;
+    }
+
+    const result = await response.json();
+    return result.success === true;
+  } catch (error) {
+    console.error("sendHighFive: Error sending high five:", error);
+    return false;
+  }
+};

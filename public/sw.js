@@ -151,6 +151,45 @@ self.addEventListener("notificationclick", (event) => {
   // Handle notification actions
   if (event.action) {
     console.log("Service Worker: Notification action clicked:", event.action);
+
+    // Handle high five action from friend activity notification
+    if (event.action === "high_five") {
+      const notificationData = event.notification.data;
+      if (notificationData?.friendName) {
+        // Send message to trigger high five effect and send high five back
+        event.waitUntil(
+          clients.matchAll({ type: "window" }).then((clientList) => {
+            if (clientList.length === 0) {
+              return clients.matchAll().then((allClients) => {
+                allClients.forEach((client) => {
+                  client.postMessage({
+                    type: "HIGH_FIVE_FROM_NOTIFICATION",
+                    notificationData: {
+                      type: "high_five",
+                      friendName: notificationData.friendName,
+                      fromNotificationAction: true,
+                      friendId: notificationData.friendId, // Include friend ID for sending high five back
+                    },
+                  });
+                });
+              });
+            }
+            clientList.forEach((client) => {
+              client.postMessage({
+                type: "HIGH_FIVE_FROM_NOTIFICATION",
+                notificationData: {
+                  type: "high_five",
+                  friendName: notificationData.friendName,
+                  fromNotificationAction: true,
+                  friendId: notificationData.friendId, // Include friend ID for sending high five back
+                },
+              });
+            });
+          })
+        );
+        return;
+      }
+    }
   }
 
   // Check if this is a timer notification

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion"; // Correct, modern import
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { activitySyncService } from "../utils/activitySyncService";
 import { supabase } from "../utils/supabaseClient";
 
 // Global subscription tracker to prevent multiple subscriptions across component instances
@@ -98,8 +99,6 @@ const LeaderboardComponent: React.FC = () => {
   const [retryTrigger, setRetryTrigger] = useState(0);
   const isMountedRef = useRef(true);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const retryCountRef = useRef(0);
-  const maxRetries = 5;
   const currentChannelRef = useRef<any>(null);
   const isSettingUpRef = useRef(false);
   const hasInitializedRef = useRef(false);
@@ -352,177 +351,46 @@ const LeaderboardComponent: React.FC = () => {
     return `leaderboard_activities_channel_${scoreType}_${instanceId}`;
   }, [scoreType, instanceId]);
 
-  // Debounced retry trigger to prevent rapid retries
-  const debouncedRetryRef = useRef<NodeJS.Timeout | null>(null);
-
+  // Set channel status to connected since we're using ActivitySyncService
   useEffect(() => {
-    // Check global subscription tracker first
-    if (globalSubscriptionTracker.has(channelName)) {
-      return;
-    }
+    setChannelStatus("SUBSCRIBED");
+  }, []);
 
-    // Only set up channel once on mount, then only when scoreType changes
-    if (hasInitializedRef.current && lastSetupScoreTypeRef.current === scoreType) {
-      return;
-    }
+  // Subscribe to activity sync service for real-time updates
+  useEffect(() => {
+    const unsubscribe = activitySyncService.subscribe((activity) => {
+      // Refresh leaderboard data when new activities are added
+      if (scoreType !== "totalSteps") {
+        console.log("Leaderboard: New activity detected via sync service:", activity);
 
-    // If component is fully initialized and we're just switching tabs, don't reinitialize
-    if (isFullyInitializedRef.current && hasInitializedRef.current) {
-      return;
-    }
-
-    const setupChannel = async () => {
-      // Prevent multiple simultaneous setup attempts
-      if (isSettingUpRef.current) {
-        return;
-      }
-
-      // Double-check global tracker before proceeding
-      if (globalSubscriptionTracker.has(channelName)) {
-        isSettingUpRef.current = false;
-        return;
-      }
-
-      isSettingUpRef.current = true;
-
-      try {
-        // For public leaderboard, we don't need authentication to set up realtime
-        // Realtime should work for all users to see live updates
-
-        // Clean up any existing channel first
-        if (currentChannelRef.current) {
-          try {
-            supabase.removeChannel(currentChannelRef.current);
-            globalSubscriptionTracker.delete(channelName);
-          } catch (error) {
-            console.error(`Error cleaning up existing channel:`, error);
-          }
-          currentChannelRef.current = null;
-        }
-
-        // Small delay to ensure cleanup is complete
-        await new Promise((resolve) => setTimeout(resolve, 200));
-
-        // Final check before creating channel
-        if (globalSubscriptionTracker.has(channelName)) {
-          isSettingUpRef.current = false;
-          return;
-        }
-
-        // Mark this channel as being set up globally BEFORE creating it
-        globalSubscriptionTracker.set(channelName, true);
-
-        // Create new channel
-        const channel = supabase
-          .channel(channelName)
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: "activities" },
-            (payload: any) => {
-              if (scoreType !== "totalSteps") {
-                // Use a timeout to ensure we're calling the latest function
-                setTimeout(() => {
-                  if (isMountedRef.current) {
-                    fetchLeaderboard();
-                  }
-                }, 100);
-              }
-            }
-          )
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: "oura_activities" },
-            (payload: any) => {
-              if (scoreType === "totalSteps") {
-                // Use a timeout to ensure we're calling the latest function
-                setTimeout(() => {
-                  if (isMountedRef.current) {
-                    fetchLeaderboard();
-                  }
-                }, 100);
-              }
-            }
-          );
-
-        // Subscribe to the channel with improved error handling
-        const subscription = channel.subscribe((status: any) => {
-          if (!isMountedRef.current) return;
-          setChannelStatus(status);
-
-          if (status === "SUBSCRIBED") {
-            console.log(`Channel ${channelName} successfully subscribed`);
-            globalSubscriptionTracker.set(channelName, true);
-          } else if (status === "CHANNEL_ERROR") {
-            console.error(`Channel ${channelName} encountered an error`);
-            // Remove from global tracker on error
-            globalSubscriptionTracker.delete(channelName);
-            // Simple retry after 3 seconds
-            setTimeout(() => {
-              if (isMountedRef.current) {
-                console.log(`Retrying connection for channel ${channelName}`);
-                setRetryTrigger((prev) => prev + 1);
-              }
-            }, 3000);
-          } else if (status === "TIMED_OUT") {
-            console.warn(`Channel ${channelName} timed out`);
-            setChannelStatus("timeout");
-            // Simple retry after 3 seconds
-            setTimeout(() => {
-              if (isMountedRef.current) {
-                console.log(`Retrying connection for channel ${channelName} after timeout`);
-                setRetryTrigger((prev) => prev + 1);
-              }
-            }, 3000);
-          } else if (status === "CLOSED") {
-            console.log(`Channel ${channelName} closed`);
-            setChannelStatus("closed");
-            globalSubscriptionTracker.delete(channelName);
-            // Simple retry after 3 seconds
-            setTimeout(() => {
-              if (isMountedRef.current) {
-                console.log(`Retrying connection for channel ${channelName} after close`);
-                setRetryTrigger((prev) => prev + 1);
-              }
-            }, 3000);
-          }
-        });
-
-        // Store the channel reference
-        currentChannelRef.current = channel;
-        lastSetupScoreTypeRef.current = scoreType;
-        hasInitializedRef.current = true;
-        isSettingUpRef.current = false;
-      } catch (error) {
-        console.error(`Error setting up channel ${channelName}:`, error);
-        setChannelStatus("error");
-        globalSubscriptionTracker.delete(channelName);
-        isSettingUpRef.current = false;
-
-        // Simple retry after 3 seconds
         setTimeout(() => {
           if (isMountedRef.current) {
-            console.log(`Retrying channel setup for ${channelName}`);
-            setRetryTrigger((prev) => prev + 1);
+            fetchLeaderboard();
           }
-        }, 3000);
+        }, 100);
       }
-    };
+    });
 
-    setupChannel();
+    const unsubscribeOura = activitySyncService.subscribeToOura((activity) => {
+      // Refresh leaderboard data when new Oura activities are added
+      if (scoreType === "totalSteps") {
+        console.log("Leaderboard: New Oura activity detected via sync service:", activity);
+
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            fetchLeaderboard();
+          }
+        }, 100);
+      }
+    });
 
     return () => {
-      if (currentChannelRef.current && isMountedRef.current) {
-        try {
-          supabase.removeChannel(currentChannelRef.current);
-          globalSubscriptionTracker.delete(channelName);
-          currentChannelRef.current = null;
-        } catch (error) {
-          console.error(`Error cleaning up channel ${channelName}:`, error);
-        }
-      }
-      isSettingUpRef.current = false;
+      unsubscribe();
+      unsubscribeOura();
     };
-  }, [scoreType, retryTrigger, channelName]);
+  }, [scoreType]);
+
+  // Remove the old channel-based real-time subscription since we now use ActivitySyncService
 
   const getScoreLabel = useCallback((type: ScoreType) => {
     switch (type) {
