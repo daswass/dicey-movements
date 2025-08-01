@@ -15,6 +15,7 @@ import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
 import { notificationService } from "../utils/notificationService";
+import { timerSyncService } from "../utils/timerSyncService";
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -81,11 +82,34 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     // Add new state for Roll & Start mode
     const [isRollAndStartMode, setIsRollAndStartMode] = useState(false);
 
+    // Add state for tracking master/slave status
+    const [isMaster, setIsMaster] = useState(false);
+
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
       () => userProfile,
       [userProfile?.id, userProfile?.timer_duration, userProfile?.notifications_enabled]
     );
+
+    // Effect to monitor master/slave status
+    useEffect(() => {
+      const checkMasterStatus = async () => {
+        try {
+          const masterStatus = await timerSyncService.isDeviceMaster();
+          setIsMaster(masterStatus);
+        } catch (error) {
+          console.error("Dashboard: Error checking master status:", error);
+        }
+      };
+
+      // Check immediately
+      checkMasterStatus();
+
+      // Set up interval to check periodically (5 seconds instead of 1)
+      const interval = setInterval(checkMasterStatus, 5000);
+
+      return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
       const { data: listener } = supabase.auth.onAuthStateChange(
@@ -522,6 +546,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               onClick={() => setShowSettings(!showSettings)}
               className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
               <Settings size={20} className="text-gray-500 dark:text-gray-400" />
+              {/* Master/Slave indicator dot */}
+              <div
+                className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                  isMaster ? "bg-green-500" : "bg-blue-500"
+                }`}
+                title={isMaster ? "Master Device" : "Slave Device"}
+              />
             </button>
             <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
             <Timer
@@ -544,6 +575,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       handleTimerComplete,
       handleRollAndStart,
       showSettings,
+      isMaster,
     ]);
 
     const currentWorkoutContent = useMemo(() => {

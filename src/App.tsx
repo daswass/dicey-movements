@@ -164,7 +164,7 @@ function App() {
           setIsTimerActive(false);
 
           // Transfer master control to this device since user is interacting
-          if (!timerSyncService.isDeviceMaster()) {
+          if (!timerSyncService.isDeviceMasterSync()) {
             timerSyncService.becomeMaster();
           }
         } else {
@@ -449,7 +449,7 @@ function App() {
     }
 
     // Only send notification if this device is the master
-    if (!timerSyncService.isDeviceMaster()) {
+    if (!timerSyncService.isDeviceMasterSync()) {
       console.log("App.tsx: Not master device, skipping notification");
       return;
     }
@@ -507,7 +507,7 @@ function App() {
       }
 
       // Transfer master control if user interacts with timer on slave device
-      if (isTimerActive && !timerSyncService.isDeviceMaster()) {
+      if (isTimerActive && !timerSyncService.isDeviceMasterSync()) {
         console.log("App.tsx: User interaction on slave device, becoming master");
         timerSyncService.becomeMaster();
       }
@@ -634,7 +634,7 @@ function App() {
             console.log("App.tsx: Timer completion via sync skipped - already completed");
           }
         }
-      } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMaster()) {
+      } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMasterSync()) {
         if (isTimerActive) {
           setIsTimerActive(false);
           setTimeLeft(0);
@@ -664,7 +664,7 @@ function App() {
   useEffect(() => {
     return () => {
       // Stop timer sync if we're master
-      if (timerSyncService.isDeviceMaster()) {
+      if (timerSyncService.isDeviceMasterSync()) {
         timerSyncService.stopTimerSync();
       }
       timerSyncService.stopPolling();

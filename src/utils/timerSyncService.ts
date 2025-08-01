@@ -191,28 +191,43 @@ class TimerSyncService {
     }
   }
 
-  // Start polling for timer updates (slave mode)
-  startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 2000): void {
+  // Start real-time subscription for timer updates
+  startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 5000): void {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
     }
 
+    // Fallback polling with longer interval (5 seconds instead of 2)
     this.syncInterval = setInterval(async () => {
       const state = await this.getTimerState();
       if (state && state.lastUpdated !== this.lastSyncTime) {
-        console.log("TimerSyncService: State changed, calling onStateChange:", {
-          masterDeviceId: state.masterDeviceId,
-          startTime: state.startTime,
-          duration: state.duration,
-          isMaster: this.isMaster,
-          deviceId: this.deviceId,
-        });
-        this.lastSyncTime = state.lastUpdated;
-        onStateChange(state);
+        this.handleStateChange(state, onStateChange);
       }
     }, intervalMs);
 
-    console.log("TimerSyncService: Started polling for timer updates");
+    console.log("TimerSyncService: Started polling for timer updates (5s interval)");
+  }
+
+  private handleStateChange(state: TimerState, onStateChange: (state: TimerState) => void): void {
+    console.log("TimerSyncService: State changed, calling onStateChange:", {
+      masterDeviceId: state.masterDeviceId,
+      startTime: state.startTime,
+      duration: state.duration,
+      isMaster: this.isMaster,
+      deviceId: this.deviceId,
+    });
+    this.lastSyncTime = state.lastUpdated;
+
+    // Check if we're still the master
+    const wasMaster = this.isMaster;
+    this.isMaster = state.masterDeviceId === this.deviceId;
+
+    // If we were master but are no longer master, log it
+    if (wasMaster && !this.isMaster) {
+      console.log("TimerSyncService: No longer master, another device took control");
+    }
+
+    onStateChange(state);
   }
 
   stopPolling(): void {
@@ -223,7 +238,30 @@ class TimerSyncService {
     console.log("TimerSyncService: Stopped polling");
   }
 
-  isDeviceMaster(): boolean {
+  async isDeviceMaster(): Promise<boolean> {
+    // If we already know we're master, return true
+    if (this.isMaster) {
+      return true;
+    }
+
+    // Check database to see if this device is actually the master
+    try {
+      const state = await this.getTimerState();
+      if (state && state.masterDeviceId === this.deviceId) {
+        this.isMaster = true;
+        return true;
+      }
+      // Update local state to reflect current database state
+      this.isMaster = false;
+      return false;
+    } catch (error) {
+      console.error("TimerSyncService: Error checking master status:", error);
+      return false;
+    }
+  }
+
+  // Synchronous version for backward compatibility
+  isDeviceMasterSync(): boolean {
     return this.isMaster;
   }
 
