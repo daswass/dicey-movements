@@ -1,33 +1,52 @@
 // Service Worker for Push Notifications
 // This service worker follows standard practices
 
-const CACHE_NAME = "dicey-movements-v19";
+const CACHE_NAME = "dicey-movements-v20";
+const STATIC_CACHE_NAME = "dicey-movements-static-v20";
+
+// Files to cache for offline functionality
+const STATIC_FILES = ["/", "/favicon.svg", "/manifest.json", "/index.html"];
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(["/", "/favicon.svg", "/manifest.json"]);
-    })
-  );
-  // Force the waiting service worker to become the active service worker
-  self.skipWaiting();
-});
+  console.log("Service Worker: Installing new version");
 
-// Activate event - clean up old caches
-self.addEventListener("activate", (event) => {
   event.waitUntil(
     Promise.all([
+      // Cache static files
+      caches.open(STATIC_CACHE_NAME).then((cache) => {
+        console.log("Service Worker: Caching static files");
+        return cache.addAll(STATIC_FILES);
+      }),
+      // Skip waiting to activate immediately
+      self.skipWaiting(),
+    ])
+  );
+});
+
+// Activate event - clean up old caches and claim clients
+self.addEventListener("activate", (event) => {
+  console.log("Service Worker: Activating new version");
+
+  event.waitUntil(
+    Promise.all([
+      // Clean up old caches
       caches.keys().then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter((cacheName) => cacheName !== CACHE_NAME)
+            .filter(
+              (cacheName) =>
+                cacheName !== CACHE_NAME &&
+                cacheName !== STATIC_CACHE_NAME &&
+                cacheName.startsWith("dicey-movements")
+            )
             .map((cacheName) => {
               console.log("Service Worker: Deleting old cache:", cacheName);
               return caches.delete(cacheName);
             })
         );
       }),
+      // Claim all clients immediately
       self.clients.claim(),
     ])
   );
@@ -253,11 +272,64 @@ self.addEventListener("sync", (event) => {
 
 async function doBackgroundSync() {
   // Handle background sync tasks
+  console.log("Service Worker: Background sync triggered");
 }
 
-// Message listener to handle updates
+// Message listener to handle updates and other messages
 self.addEventListener("message", (event) => {
+  console.log("Service Worker: Message received:", event.data);
+
   if (event.data && event.data.type === "SKIP_WAITING") {
+    console.log("Service Worker: Skipping waiting to activate new version");
     self.skipWaiting();
   }
+
+  if (event.data && event.data.type === "GET_VERSION") {
+    event.ports[0].postMessage({ version: CACHE_NAME });
+  }
+});
+
+// Fetch event for offline functionality
+self.addEventListener("fetch", (event) => {
+  // Only handle GET requests
+  if (event.request.method !== "GET") {
+    return;
+  }
+
+  // Skip non-HTTP requests
+  if (!event.request.url.startsWith("http")) {
+    return;
+  }
+
+  // Skip external requests
+  if (!event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      // Return cached version if available
+      if (response) {
+        return response;
+      }
+
+      // Otherwise, fetch from network
+      return fetch(event.request).then((response) => {
+        // Don't cache non-successful responses
+        if (!response || response.status !== 200 || response.type !== "basic") {
+          return response;
+        }
+
+        // Clone the response
+        const responseToCache = response.clone();
+
+        // Cache the response for future use
+        caches.open(STATIC_CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+
+        return response;
+      });
+    })
+  );
 });
