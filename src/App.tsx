@@ -14,6 +14,7 @@ import TimerHeader from "./components/TimerHeader";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
+import { activitySyncService } from "./utils/activitySyncService";
 import { notificationService } from "./utils/notificationService";
 import {
   fetchPendingFriendRequests,
@@ -87,6 +88,26 @@ function App() {
   }, []);
 
   const showTimerHeader = isTimerActive;
+
+  // Handle visibility changes to reconnect services when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // The services will automatically reconnect when the page becomes visible
+        // due to the visibility handling in SupabaseChannelManager
+
+        // Force refresh timer sync state after reconnection
+        setTimeout(() => {
+          timerSyncService.refreshState();
+        }, 1000); // Small delay to ensure reconnection is complete
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

@@ -92,7 +92,6 @@ class TimerSyncService {
 
       this.isMaster = true;
       this.lastSyncTime = now;
-      console.log("TimerSyncService: Started timer sync as master");
       return true;
     } catch (error) {
       console.error("TimerSyncService: Error starting timer sync:", error);
@@ -122,7 +121,6 @@ class TimerSyncService {
 
       this.isMaster = false;
       this.lastSyncTime = null;
-      console.log("TimerSyncService: Stopped timer sync");
       return true;
     } catch (error) {
       console.error("TimerSyncService: Error stopping timer sync:", error);
@@ -153,7 +151,6 @@ class TimerSyncService {
 
       if (!currentState?.startTime && (currentState?.duration || 0) > 0) {
         updateData.timer_start_time = now;
-        console.log("TimerSyncService: Setting start time");
       }
 
       const { error } = await supabase.from("profiles").update(updateData).eq("id", user.id);
@@ -165,7 +162,6 @@ class TimerSyncService {
 
       this.isMaster = true;
       this.lastSyncTime = now;
-      console.log("TimerSyncService: Became master");
       this.notifyMasterStatusChange(true);
       return true;
     } catch (error) {
@@ -216,10 +212,12 @@ class TimerSyncService {
 
     // Don't get initial state here - let the normal initialization flow handle it
 
-    // Set up real-time subscription
-    this.setupRealtimeSubscription(onStateChange).catch((error) => {
-      console.error("TimerSyncService: Error setting up real-time subscription:", error);
-    });
+    // Set up real-time subscription only if page is visible
+    if (!document.hidden) {
+      this.setupRealtimeSubscription(onStateChange).catch((error) => {
+        console.error("TimerSyncService: Error setting up real-time subscription:", error);
+      });
+    }
 
     // Fallback polling as backup (much longer interval)
     this.syncInterval = setInterval(async () => {
@@ -230,9 +228,26 @@ class TimerSyncService {
     }, 30000); // 30 seconds as backup
   }
 
+  // Force refresh state after reconnection
+  async refreshState(): Promise<void> {
+    try {
+      const state = await this.getTimerState();
+      if (state && this.currentStateChangeCallback) {
+        this.handleStateChange(state, this.currentStateChangeCallback);
+      }
+    } catch (error) {
+      console.error("TimerSyncService: Error refreshing state:", error);
+    }
+  }
+
   private async setupRealtimeSubscription(
     onStateChange: (state: TimerState) => void
   ): Promise<void> {
+    // Don't set up subscription if page is hidden
+    if (document.hidden) {
+      return;
+    }
+
     try {
       const {
         data: { user },
@@ -290,8 +305,8 @@ class TimerSyncService {
       this.syncInterval = null;
     }
 
-    // Stop real-time subscription
-    this.channelManager.disconnect();
+    // Temporarily disconnect real-time subscription (can be resumed)
+    this.channelManager.temporarilyDisconnect();
 
     // Reset state
     this.currentStateChangeCallback = null;

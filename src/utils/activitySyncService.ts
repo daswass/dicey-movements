@@ -32,8 +32,10 @@ class ActivitySyncService {
   subscribe(callback: ActivitySyncCallback): () => void {
     this.listeners.add(callback);
 
-    // Start real-time subscription if not already subscribed
-    this.startRealtimeSubscription();
+    // Start real-time subscription if not already subscribed and page is visible
+    if (!document.hidden) {
+      this.startRealtimeSubscription();
+    }
 
     // Return unsubscribe function
     return () => {
@@ -50,8 +52,10 @@ class ActivitySyncService {
   subscribeToOura(callback: OuraActivitySyncCallback): () => void {
     this.ouraListeners.add(callback);
 
-    // Start real-time subscription if not already subscribed
-    this.startRealtimeSubscription();
+    // Start real-time subscription if not already subscribed and page is visible
+    if (!document.hidden) {
+      this.startRealtimeSubscription();
+    }
 
     // Return unsubscribe function
     return () => {
@@ -66,7 +70,7 @@ class ActivitySyncService {
 
   // Start real-time subscription to activities table
   private startRealtimeSubscription(): void {
-    if (this.isSubscribed) return;
+    if (this.isSubscribed || document.hidden) return;
 
     try {
       // Subscribe to activities table

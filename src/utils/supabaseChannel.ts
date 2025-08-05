@@ -83,6 +83,8 @@ export class SupabaseChannelManager {
   private visibilityChangeHandler: (() => void) | null = null;
   private onlineHandler: (() => void) | null = null;
   private isActive = false;
+  private wasConnectedBeforeHidden = false;
+  private isPermanentlyDisconnected = false;
   private subscriptions: Array<{
     event: string;
     filter: any;
@@ -103,18 +105,36 @@ export class SupabaseChannelManager {
 
   private setupVisibilityListener(): void {
     this.visibilityChangeHandler = () => {
-      if (!document.hidden && this.isActive) {
-        // Page became visible and channel is active, check connection
-        if (!this.isConnected) {
-          console.log(`${this.channelName}: Page became visible, reconnecting...`);
+      if (document.hidden) {
+        // Page became hidden - disconnect to save resources
+        if (this.isConnected) {
+          console.log(`${this.channelName}: Page hidden, disconnecting to save resources`);
+          this.wasConnectedBeforeHidden = true;
+          this.temporarilyDisconnect();
+        } else {
+          console.log(`${this.channelName}: Page hidden, but not connected - no action needed`);
+        }
+      } else {
+        // Page became visible - reconnect if we had an active connection before
+        if (
+          this.wasConnectedBeforeHidden &&
+          this.isActive &&
+          this.subscriptions.length > 0 &&
+          !this.isPermanentlyDisconnected
+        ) {
+          console.log(`${this.channelName}: Page visible, reconnecting...`);
+          this.wasConnectedBeforeHidden = false;
           // Reset reconnection attempts and start fresh
           this.reconnectAttempts = 0;
-          this.reconnectDelay = this.reconnectDelay;
           if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
           }
-          this.handleReconnection();
+          this.createChannel();
+        } else {
+          console.log(
+            `${this.channelName}: Page visible, but no reconnection needed (wasConnected: ${this.wasConnectedBeforeHidden}, isActive: ${this.isActive}, subscriptions: ${this.subscriptions.length}, permanentlyDisconnected: ${this.isPermanentlyDisconnected})`
+          );
         }
       }
     };
@@ -124,18 +144,22 @@ export class SupabaseChannelManager {
 
   private setupNetworkListener(): void {
     this.onlineHandler = () => {
-      if (this.isActive) {
+      if (
+        this.isActive &&
+        !document.hidden &&
+        this.subscriptions.length > 0 &&
+        !this.isPermanentlyDisconnected
+      ) {
         // Network came back online and channel is active, check connection
         if (!this.isConnected) {
           console.log(`${this.channelName}: Network came back online, reconnecting...`);
           // Reset reconnection attempts and start fresh
           this.reconnectAttempts = 0;
-          this.reconnectDelay = this.reconnectDelay;
           if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
           }
-          this.handleReconnection();
+          this.createChannel();
         }
       }
     };
@@ -154,12 +178,15 @@ export class SupabaseChannelManager {
     // Store the subscription for potential reconnection
     this.subscriptions.push({ event, filter, callback });
 
-    if (this.channel) {
-      // Add to existing channel
-      (this.channel as any).on(event, filter, callback);
-    } else {
-      // Create new channel
-      this.createChannel();
+    // Only create channel if page is visible and not permanently disconnected
+    if (!document.hidden && !this.isPermanentlyDisconnected) {
+      if (this.channel) {
+        // Add to existing channel
+        (this.channel as any).on(event, filter, callback);
+      } else {
+        // Create new channel
+        this.createChannel();
+      }
     }
 
     return {
@@ -172,6 +199,14 @@ export class SupabaseChannelManager {
   }
 
   private createChannel(): void {
+    // Don't create channel if page is hidden or permanently disconnected
+    if (document.hidden || this.isPermanentlyDisconnected) {
+      console.log(
+        `${this.channelName}: Skipping channel creation - page is hidden or permanently disconnected`
+      );
+      return;
+    }
+
     if (this.channel) {
       console.warn(`${this.channelName}: Channel already exists, disconnecting first`);
       this.disconnect();
@@ -198,7 +233,6 @@ export class SupabaseChannelManager {
         if (status === SUPABASE_CHANNEL_STATUS.SUBSCRIBED) {
           // Reset reconnect attempts on successful connection
           this.reconnectAttempts = 0;
-          this.reconnectDelay = this.reconnectDelay;
           if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -207,8 +241,10 @@ export class SupabaseChannelManager {
           status === SUPABASE_CHANNEL_STATUS.CHANNEL_ERROR ||
           status === SUPABASE_CHANNEL_STATUS.TIMED_OUT
         ) {
-          // Attempt to reconnect
-          this.handleReconnection();
+          // Only attempt to reconnect if page is visible and not permanently disconnected
+          if (!document.hidden && !this.isPermanentlyDisconnected) {
+            this.handleReconnection();
+          }
         }
       });
     } catch (error) {
@@ -216,11 +252,22 @@ export class SupabaseChannelManager {
       if (this.onError) {
         this.onError(error as Error);
       }
-      this.handleReconnection();
+      // Only attempt to reconnect if page is visible and not permanently disconnected
+      if (!document.hidden && !this.isPermanentlyDisconnected) {
+        this.handleReconnection();
+      }
     }
   }
 
   private handleReconnection(): void {
+    // Don't reconnect if page is hidden or permanently disconnected
+    if (document.hidden || this.isPermanentlyDisconnected) {
+      console.log(
+        `${this.channelName}: Skipping reconnection - page is hidden or permanently disconnected`
+      );
+      return;
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error(`${this.channelName}: Max reconnection attempts reached`);
       return;
@@ -238,13 +285,39 @@ export class SupabaseChannelManager {
     );
 
     this.reconnectTimeout = setTimeout(() => {
-      this.isConnected = false;
-      this.channel = null;
-      // Recreate the channel with all stored subscriptions
-      if (this.subscriptions.length > 0) {
-        this.createChannel();
+      // Check again if page is still visible before reconnecting
+      if (!document.hidden && !this.isPermanentlyDisconnected) {
+        this.isConnected = false;
+        this.channel = null;
+        // Recreate the channel with all stored subscriptions
+        if (this.subscriptions.length > 0) {
+          this.createChannel();
+        }
       }
     }, delay);
+  }
+
+  /**
+   * Temporarily disconnect (for visibility changes)
+   */
+  temporarilyDisconnect(): void {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.channel) {
+      try {
+        this.supabase.removeChannel(this.channel);
+      } catch (error) {
+        console.warn(`${this.channelName}: Error removing channel:`, error);
+      }
+      this.channel = null;
+      this.isConnected = false;
+    }
+
+    // Reset reconnect state but keep isActive true
+    this.reconnectAttempts = 0;
   }
 
   /**
@@ -252,6 +325,7 @@ export class SupabaseChannelManager {
    */
   disconnect(): void {
     this.isActive = false;
+    this.isPermanentlyDisconnected = true;
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
@@ -270,7 +344,6 @@ export class SupabaseChannelManager {
 
     // Reset reconnect state
     this.reconnectAttempts = 0;
-    this.reconnectDelay = this.reconnectDelay;
   }
 
   /**
@@ -289,6 +362,7 @@ export class SupabaseChannelManager {
   cleanup(): void {
     this.disconnect();
     this.subscriptions = [];
+    this.wasConnectedBeforeHidden = false;
 
     // Remove event listeners
     if (this.visibilityChangeHandler) {
