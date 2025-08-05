@@ -174,13 +174,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       const unsubscribe = activitySyncService.subscribe((activity) => {
         // Only sync on non-master devices since master already has the updated data
         if (!isMaster) {
-          const exerciseName = activity.exercise_name || "exercise";
-          const reps = activity.reps || 0;
-
-          // Show a subtle notification
-          console.log(`Dashboard: Syncing ${reps} ${exerciseName} from another device`);
-
-          // Refresh history to get updated workout data
           fetchHistory();
         }
       });

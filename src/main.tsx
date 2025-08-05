@@ -11,32 +11,14 @@ if ("serviceWorker" in navigator) {
     .then((registration) => {
       console.log("Service Worker registered:", registration);
 
-      // Handle service worker updates
+      // Handle service worker updates - only when there's an actual functional change
       registration.addEventListener("updatefound", () => {
         console.log("Service Worker update found");
         const newWorker = registration.installing;
         if (newWorker) {
           newWorker.addEventListener("statechange", () => {
             if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              console.log("New service worker installed, ready to activate");
-
-              // Check if user is in the middle of a timer before auto-refreshing
-              const isTimerActive = localStorage.getItem("timer_active") === "true";
-              const timerDuration = localStorage.getItem("timer_duration");
-
-              if (isTimerActive && timerDuration) {
-                // Don't auto-refresh if timer is running
-                console.log("Timer is active, skipping auto-refresh");
-                return;
-              }
-
-              // Auto-refresh after a delay if timer not active
-              setTimeout(() => {
-                if (newWorker.state === "installed") {
-                  console.log("Auto-refreshing to activate new service worker");
-                  window.location.reload();
-                }
-              }, 5000); // 5 second delay
+              console.log("New service worker installed, but not auto-activating");
             }
           });
         }

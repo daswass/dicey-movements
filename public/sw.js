@@ -1,8 +1,9 @@
 // Service Worker for Push Notifications
 // This service worker follows standard practices
 
-const CACHE_NAME = "dicey-movements-v20";
-const STATIC_CACHE_NAME = "dicey-movements-static-v20";
+// Use a stable cache name that doesn't change unless the service worker actually changes
+const CACHE_NAME = "dicey-movements-v1";
+const STATIC_CACHE_NAME = "dicey-movements-static-v1";
 
 // Files to cache for offline functionality
 const STATIC_FILES = ["/", "/favicon.svg", "/manifest.json", "/index.html"];

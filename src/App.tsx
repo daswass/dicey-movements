@@ -18,8 +18,8 @@ import { notificationService } from "./utils/notificationService";
 import {
   fetchPendingFriendRequests,
   getUserLocation,
-  updateUserLocation,
   sendHighFive,
+  updateUserLocation,
 } from "./utils/socialService";
 import { supabase } from "./utils/supabaseClient";
 import { timerSyncService, type TimerState } from "./utils/timerSyncService";
@@ -246,7 +246,6 @@ function App() {
   const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
     // Prevent refetching if we already have the profile for this user
     if (lastFetchedUserIdRef.current === userId) {
-      console.log("App.tsx: Profile already fetched for user:", userId);
       return;
     }
 
@@ -508,9 +507,6 @@ function App() {
   const stopTimerNotifications = useCallback(() => {
     setIsTitleFlashing(false);
     document.body.classList.remove("timer-expired-flash");
-
-    // Don't clear notifications on user interaction - only stop visual effects
-    console.log("App.tsx: User interaction stopped timer flashing effects");
   }, []);
 
   // Stop notifications when user interacts with the page
@@ -530,7 +526,6 @@ function App() {
         }
 
         interactionTimeout = setTimeout(() => {
-          console.log("App.tsx: User interaction on slave device, becoming master");
           timerSyncService.becomeMaster();
         }, 100); // 100ms debounce
       }
@@ -632,7 +627,6 @@ function App() {
   useEffect(() => {
     const handleTimerStateChange = (state: TimerState) => {
       if (state.startTime && !isTimerActive && state.duration > 0) {
-        console.log("App.tsx: Timer started via sync");
         const startTime = new Date(state.startTime);
         const now = new Date();
         const elapsedMs = now.getTime() - startTime.getTime();
@@ -648,14 +642,11 @@ function App() {
         } else {
           // Timer has already completed - only set if not already completed
           if (!timerComplete) {
-            console.log("App.tsx: Timer completed via sync");
             setTimerComplete(true);
             setIsTimerActive(false);
             setTimeLeft(0);
             setCurrentWorkoutComplete(false);
             stopWorkerTimer();
-          } else {
-            console.log("App.tsx: Timer completion via sync skipped - already completed");
           }
         }
       } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMasterSync()) {

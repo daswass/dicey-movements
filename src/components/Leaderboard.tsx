@@ -2,12 +2,7 @@ import { AnimatePresence, motion } from "framer-motion"; // Correct, modern impo
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { activitySyncService } from "../utils/activitySyncService";
 import { supabase } from "../utils/supabaseClient";
-
-// Global subscription tracker to prevent multiple subscriptions across component instances
-const globalSubscriptionTracker = new Map<string, boolean>();
-
-// Component instance counter to ensure unique channel names
-let componentInstanceCounter = 0;
+import { SUPABASE_CHANNEL_STATUS, UI_STATUS } from "../utils/supabaseChannel";
 
 // --- Helper function to get a CSS class for the flash animation ---
 const getFlashClass = (change?: "increase" | "decrease") => {
@@ -83,28 +78,37 @@ interface Activity {
 type ScoreType = "totalReps" | "totalSets" | "totalSteps";
 
 const LeaderboardComponent: React.FC = () => {
-  // Create a unique instance ID for this component
-  const instanceId = useMemo(() => {
-    componentInstanceCounter += 1;
-    return componentInstanceCounter;
-  }, []);
-
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>(getStoredScoreType);
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">(getStoredTimeRange);
 
   const previousEntriesRef = useRef<Map<string, number>>(new Map());
-  const [channelStatus, setChannelStatus] = useState<string>("disconnected");
+  const [channelStatus, setChannelStatus] = useState<string>(UI_STATUS.DISCONNECTED);
   const [retryTrigger, setRetryTrigger] = useState(0);
   const isMountedRef = useRef(true);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentChannelRef = useRef<any>(null);
-  const isSettingUpRef = useRef(false);
-  const hasInitializedRef = useRef(false);
-  const lastSetupScoreTypeRef = useRef<string | null>(null);
   // Add ref to track if component has been fully initialized
   const isFullyInitializedRef = useRef(false);
+
+  // Update channel status based on ActivitySyncService
+  useEffect(() => {
+    const updateChannelStatus = () => {
+      const status = activitySyncService.getConnectionStatus();
+      setChannelStatus(
+        status.isSubscribed
+          ? SUPABASE_CHANNEL_STATUS.SUBSCRIBED
+          : SUPABASE_CHANNEL_STATUS.CHANNEL_ERROR
+      );
+    };
+
+    updateChannelStatus();
+
+    // Update every 2 seconds to keep status current
+    const interval = setInterval(updateChannelStatus, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Memoize the fetchActivityLeaderboard function to prevent recreation
   const fetchActivityLeaderboard = useCallback(async () => {
@@ -325,20 +329,8 @@ const LeaderboardComponent: React.FC = () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
-      if (currentChannelRef.current) {
-        try {
-          supabase.removeChannel(currentChannelRef.current);
-          // Clean up from global tracker using the current scoreType
-          const currentChannelName = `leaderboard_activities_channel_${scoreType}_${instanceId}`;
-          globalSubscriptionTracker.delete(currentChannelName);
-          currentChannelRef.current = null;
-        } catch (error) {
-          console.error("Error cleaning up channel on unmount:", error);
-        }
-      }
-      isSettingUpRef.current = false;
     };
-  }, [scoreType, instanceId]);
+  }, []);
 
   // Create a stable reference for the fetch function
   const fetchLeaderboardRef = useRef(fetchLeaderboard);
@@ -346,23 +338,11 @@ const LeaderboardComponent: React.FC = () => {
     fetchLeaderboardRef.current = fetchLeaderboard;
   }, [fetchLeaderboard]);
 
-  // Memoize the channel name to prevent recreation
-  const channelName = useMemo(() => {
-    return `leaderboard_activities_channel_${scoreType}_${instanceId}`;
-  }, [scoreType, instanceId]);
-
-  // Set channel status to connected since we're using ActivitySyncService
-  useEffect(() => {
-    setChannelStatus("SUBSCRIBED");
-  }, []);
-
   // Subscribe to activity sync service for real-time updates
   useEffect(() => {
     const unsubscribe = activitySyncService.subscribe((activity) => {
       // Refresh leaderboard data when new activities are added
       if (scoreType !== "totalSteps") {
-        console.log("Leaderboard: New activity detected via sync service:", activity);
-
         setTimeout(() => {
           if (isMountedRef.current) {
             fetchLeaderboard();
@@ -374,8 +354,6 @@ const LeaderboardComponent: React.FC = () => {
     const unsubscribeOura = activitySyncService.subscribeToOura((activity) => {
       // Refresh leaderboard data when new Oura activities are added
       if (scoreType === "totalSteps") {
-        console.log("Leaderboard: New Oura activity detected via sync service:", activity);
-
         setTimeout(() => {
           if (isMountedRef.current) {
             fetchLeaderboard();
@@ -434,27 +412,33 @@ const LeaderboardComponent: React.FC = () => {
           <div className="flex items-center space-x-2">
             <div
               className={`w-2 h-2 rounded-full transition-colors duration-300 ${
-                channelStatus === "SUBSCRIBED"
+                channelStatus === SUPABASE_CHANNEL_STATUS.SUBSCRIBED
                   ? "bg-green-500"
-                  : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
+                  : channelStatus === SUPABASE_CHANNEL_STATUS.CHANNEL_ERROR ||
+                    channelStatus === UI_STATUS.ERROR
                   ? "bg-red-500"
-                  : channelStatus === "TIMED_OUT" || channelStatus === "timeout"
+                  : channelStatus === SUPABASE_CHANNEL_STATUS.TIMED_OUT ||
+                    channelStatus === UI_STATUS.TIMEOUT
                   ? "bg-yellow-500"
-                  : channelStatus === "CLOSED" || channelStatus === "closed"
+                  : channelStatus === SUPABASE_CHANNEL_STATUS.CLOSED ||
+                    channelStatus === UI_STATUS.CLOSED
                   ? "bg-gray-500"
                   : "bg-yellow-500"
               }`}
             />
             <span className="text-xs text-gray-500 dark:text-gray-400 transition-opacity duration-300">
-              {channelStatus === "SUBSCRIBED"
+              {channelStatus === SUPABASE_CHANNEL_STATUS.SUBSCRIBED
                 ? "Live"
-                : channelStatus === "CHANNEL_ERROR" || channelStatus === "error"
+                : channelStatus === SUPABASE_CHANNEL_STATUS.CHANNEL_ERROR ||
+                  channelStatus === UI_STATUS.ERROR
                 ? "Reconnecting..."
-                : channelStatus === "TIMED_OUT" || channelStatus === "timeout"
+                : channelStatus === SUPABASE_CHANNEL_STATUS.TIMED_OUT ||
+                  channelStatus === UI_STATUS.TIMEOUT
                 ? "Reconnecting..."
-                : channelStatus === "CLOSED" || channelStatus === "closed"
+                : channelStatus === SUPABASE_CHANNEL_STATUS.CLOSED ||
+                  channelStatus === UI_STATUS.CLOSED
                 ? "Reconnecting..."
-                : channelStatus === "connecting" || channelStatus === "disconnected"
+                : channelStatus === UI_STATUS.CONNECTING || channelStatus === UI_STATUS.DISCONNECTED
                 ? "Connecting..."
                 : ""}
             </span>

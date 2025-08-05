@@ -1,0 +1,313 @@
+import { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+
+// Supabase channel status constants (actual channel statuses from Supabase)
+export const SUPABASE_CHANNEL_STATUS = {
+  SUBSCRIBED: "SUBSCRIBED",
+  CHANNEL_ERROR: "CHANNEL_ERROR",
+  TIMED_OUT: "TIMED_OUT",
+  CLOSED: "CLOSED",
+} as const;
+
+// UI display status constants (for component display logic)
+export const UI_STATUS = {
+  CONNECTING: "connecting",
+  DISCONNECTED: "disconnected",
+  ERROR: "error",
+  TIMEOUT: "timeout",
+  CLOSED: "closed",
+} as const;
+
+export type SupabaseChannelStatus =
+  (typeof SUPABASE_CHANNEL_STATUS)[keyof typeof SUPABASE_CHANNEL_STATUS];
+export type UIStatus = (typeof UI_STATUS)[keyof typeof UI_STATUS];
+
+export interface ChannelConfig {
+  name: string;
+  supabase: SupabaseClient;
+  onStatusChange?: (status: string) => void;
+  onError?: (error: Error) => void;
+  maxReconnectAttempts?: number;
+  initialReconnectDelay?: number;
+}
+
+export interface ChannelSubscription {
+  channel: RealtimeChannel;
+  isConnected: boolean;
+  reconnectAttempts: number;
+  disconnect: () => void;
+  getStatus: () => { isConnected: boolean; reconnectAttempts: number };
+}
+
+/**
+ * SupabaseChannelManager - A reusable wrapper for Supabase real-time channels
+ * with automatic reconnection, visibility handling, and network status monitoring.
+ *
+ * Usage example:
+ *
+ * ```typescript
+ * const channelManager = createSupabaseChannel({
+ *   name: "my-channel",
+ *   supabase,
+ *   onStatusChange: (status) => console.log("Status:", status),
+ *   onError: (error) => console.error("Error:", error),
+ * });
+ *
+ * // Subscribe to table changes
+ * channelManager.subscribe(
+ *   "postgres_changes",
+ *   {
+ *     event: "INSERT",
+ *     schema: "public",
+ *     table: "my_table",
+ *   },
+ *   (payload) => {
+ *     console.log("New record:", payload.new);
+ *   }
+ * );
+ *
+ * // Cleanup when done
+ * channelManager.cleanup();
+ * ```
+ */
+export class SupabaseChannelManager {
+  private channel: RealtimeChannel | null = null;
+  private isConnected = false;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts: number;
+  private reconnectDelay: number;
+  private supabase: SupabaseClient;
+  private channelName: string;
+  private onStatusChange?: (status: string) => void;
+  private onError?: (error: Error) => void;
+  private visibilityChangeHandler: (() => void) | null = null;
+  private onlineHandler: (() => void) | null = null;
+  private isActive = false;
+  private subscriptions: Array<{
+    event: string;
+    filter: any;
+    callback: (payload: any) => void;
+  }> = [];
+
+  constructor(config: ChannelConfig) {
+    this.supabase = config.supabase;
+    this.channelName = config.name;
+    this.onStatusChange = config.onStatusChange;
+    this.onError = config.onError;
+    this.maxReconnectAttempts = config.maxReconnectAttempts || 5;
+    this.reconnectDelay = config.initialReconnectDelay || 1000;
+
+    this.setupVisibilityListener();
+    this.setupNetworkListener();
+  }
+
+  private setupVisibilityListener(): void {
+    this.visibilityChangeHandler = () => {
+      if (!document.hidden && this.isActive) {
+        // Page became visible and channel is active, check connection
+        if (!this.isConnected) {
+          console.log(`${this.channelName}: Page became visible, reconnecting...`);
+          // Reset reconnection attempts and start fresh
+          this.reconnectAttempts = 0;
+          this.reconnectDelay = this.reconnectDelay;
+          if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+          }
+          this.handleReconnection();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", this.visibilityChangeHandler);
+  }
+
+  private setupNetworkListener(): void {
+    this.onlineHandler = () => {
+      if (this.isActive) {
+        // Network came back online and channel is active, check connection
+        if (!this.isConnected) {
+          console.log(`${this.channelName}: Network came back online, reconnecting...`);
+          // Reset reconnection attempts and start fresh
+          this.reconnectAttempts = 0;
+          this.reconnectDelay = this.reconnectDelay;
+          if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+          }
+          this.handleReconnection();
+        }
+      }
+    };
+
+    window.addEventListener("online", this.onlineHandler);
+  }
+
+  /**
+   * Subscribe to a real-time event
+   * @param event - The event type (e.g., "postgres_changes")
+   * @param filter - The filter configuration
+   * @param callback - The callback function to handle events
+   * @returns ChannelSubscription object with status and disconnect method
+   */
+  subscribe(event: string, filter: any, callback: (payload: any) => void): ChannelSubscription {
+    // Store the subscription for potential reconnection
+    this.subscriptions.push({ event, filter, callback });
+
+    if (this.channel) {
+      // Add to existing channel
+      (this.channel as any).on(event, filter, callback);
+    } else {
+      // Create new channel
+      this.createChannel();
+    }
+
+    return {
+      channel: this.channel!,
+      isConnected: this.isConnected,
+      reconnectAttempts: this.reconnectAttempts,
+      disconnect: () => this.disconnect(),
+      getStatus: () => this.getStatus(),
+    };
+  }
+
+  private createChannel(): void {
+    if (this.channel) {
+      console.warn(`${this.channelName}: Channel already exists, disconnecting first`);
+      this.disconnect();
+    }
+
+    this.isActive = true;
+
+    try {
+      this.channel = this.supabase.channel(this.channelName);
+
+      // Add all stored subscriptions
+      this.subscriptions.forEach(({ event, filter, callback }) => {
+        (this.channel as any).on(event, filter, callback);
+      });
+
+      this.channel.subscribe((status) => {
+        this.isConnected = status === SUPABASE_CHANNEL_STATUS.SUBSCRIBED;
+
+        if (this.onStatusChange) {
+          this.onStatusChange(status);
+        }
+
+        // Handle connection status changes
+        if (status === SUPABASE_CHANNEL_STATUS.SUBSCRIBED) {
+          // Reset reconnect attempts on successful connection
+          this.reconnectAttempts = 0;
+          this.reconnectDelay = this.reconnectDelay;
+          if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+          }
+        } else if (
+          status === SUPABASE_CHANNEL_STATUS.CHANNEL_ERROR ||
+          status === SUPABASE_CHANNEL_STATUS.TIMED_OUT
+        ) {
+          // Attempt to reconnect
+          this.handleReconnection();
+        }
+      });
+    } catch (error) {
+      console.error(`${this.channelName}: Error setting up real-time subscription:`, error);
+      if (this.onError) {
+        this.onError(error as Error);
+      }
+      this.handleReconnection();
+    }
+  }
+
+  private handleReconnection(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error(`${this.channelName}: Max reconnection attempts reached`);
+      return;
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+
+    this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
+
+    console.log(
+      `${this.channelName}: Reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
+
+    this.reconnectTimeout = setTimeout(() => {
+      this.isConnected = false;
+      this.channel = null;
+      // Recreate the channel with all stored subscriptions
+      if (this.subscriptions.length > 0) {
+        this.createChannel();
+      }
+    }, delay);
+  }
+
+  /**
+   * Disconnect the channel and stop all subscriptions
+   */
+  disconnect(): void {
+    this.isActive = false;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.channel) {
+      try {
+        this.supabase.removeChannel(this.channel);
+      } catch (error) {
+        console.warn(`${this.channelName}: Error removing channel:`, error);
+      }
+      this.channel = null;
+      this.isConnected = false;
+    }
+
+    // Reset reconnect state
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = this.reconnectDelay;
+  }
+
+  /**
+   * Get the current connection status
+   */
+  getStatus(): { isConnected: boolean; reconnectAttempts: number } {
+    return {
+      isConnected: this.isConnected,
+      reconnectAttempts: this.reconnectAttempts,
+    };
+  }
+
+  /**
+   * Cleanup the channel manager and remove all event listeners
+   */
+  cleanup(): void {
+    this.disconnect();
+    this.subscriptions = [];
+
+    // Remove event listeners
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener("visibilitychange", this.visibilityChangeHandler);
+      this.visibilityChangeHandler = null;
+    }
+
+    if (this.onlineHandler) {
+      window.removeEventListener("online", this.onlineHandler);
+      this.onlineHandler = null;
+    }
+  }
+}
+
+/**
+ * Factory function to create a SupabaseChannelManager
+ * @param config - Configuration for the channel manager
+ * @returns A new SupabaseChannelManager instance
+ */
+export function createSupabaseChannel(config: ChannelConfig): SupabaseChannelManager {
+  return new SupabaseChannelManager(config);
+}

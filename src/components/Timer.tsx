@@ -163,8 +163,8 @@ const Timer: React.FC<TimerProps> = ({
             .from("profiles")
             .update({
               timer_master_device_id: null,
-              timer_start_time: null,
               timer_last_updated: new Date().toISOString(),
+              // Don't clear timer_start_time - it should persist
             })
             .eq("id", user.id);
           console.log("Timer: Cleared database timer sync fields");

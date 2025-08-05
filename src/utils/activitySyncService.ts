@@ -1,4 +1,9 @@
 // Shared service for activity synchronization across components
+import {
+  createSupabaseChannel,
+  SupabaseChannelManager,
+  SUPABASE_CHANNEL_STATUS,
+} from "./supabaseChannel";
 import { supabase } from "./supabaseClient";
 
 type ActivitySyncCallback = (activity: any) => void;
@@ -7,8 +12,21 @@ type OuraActivitySyncCallback = (activity: any) => void;
 class ActivitySyncService {
   private listeners: Set<ActivitySyncCallback> = new Set();
   private ouraListeners: Set<OuraActivitySyncCallback> = new Set();
-  private subscription: any = null;
+  private channelManager: SupabaseChannelManager;
   private isSubscribed = false;
+
+  constructor() {
+    this.channelManager = createSupabaseChannel({
+      name: "activity-sync",
+      supabase,
+      onStatusChange: (status) => {
+        this.isSubscribed = status === SUPABASE_CHANNEL_STATUS.SUBSCRIBED;
+      },
+      onError: (error) => {
+        console.error("ActivitySyncService: Error in channel:", error);
+      },
+    });
+  }
 
   // Subscribe to activity changes
   subscribe(callback: ActivitySyncCallback): () => void {
@@ -51,36 +69,31 @@ class ActivitySyncService {
     if (this.isSubscribed) return;
 
     try {
-      this.subscription = supabase
-        .channel("activity-sync")
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "activities",
-          },
-          (payload) => {
-            console.log("ActivitySyncService: New activity detected:", payload);
-            this.notifyNewActivity(payload.new);
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "oura_activities",
-          },
-          (payload) => {
-            console.log("ActivitySyncService: New Oura activity detected:", payload);
-            this.notifyNewOuraActivity(payload.new);
-          }
-        )
-        .subscribe((status) => {
-          console.log("ActivitySyncService: Real-time subscription status:", status);
-          this.isSubscribed = status === "SUBSCRIBED";
-        });
+      // Subscribe to activities table
+      this.channelManager.subscribe(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "activities",
+        },
+        (payload) => {
+          this.notifyNewActivity(payload.new);
+        }
+      );
+
+      // Subscribe to oura_activities table
+      this.channelManager.subscribe(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "oura_activities",
+        },
+        (payload) => {
+          this.notifyNewOuraActivity(payload.new);
+        }
+      );
     } catch (error) {
       console.error("ActivitySyncService: Error setting up real-time subscription:", error);
     }
@@ -88,15 +101,8 @@ class ActivitySyncService {
 
   // Stop real-time subscription
   private stopRealtimeSubscription(): void {
-    if (this.subscription) {
-      try {
-        supabase.removeChannel(this.subscription);
-      } catch (error) {
-        console.warn("ActivitySyncService: Error removing channel:", error);
-      }
-      this.subscription = null;
-      this.isSubscribed = false;
-    }
+    this.channelManager.disconnect();
+    this.isSubscribed = false;
   }
 
   // Notify all listeners of new activity
@@ -126,6 +132,26 @@ class ActivitySyncService {
     this.listeners.clear();
     this.ouraListeners.clear();
     this.stopRealtimeSubscription();
+  }
+
+  // Cleanup method for consistency with TimerSyncService
+  cleanup(): void {
+    this.clear();
+    this.channelManager.cleanup();
+  }
+
+  // Get connection status for debugging
+  getConnectionStatus(): {
+    isSubscribed: boolean;
+    reconnectAttempts: number;
+    hasListeners: boolean;
+  } {
+    const status = this.channelManager.getStatus();
+    return {
+      isSubscribed: this.isSubscribed,
+      reconnectAttempts: status.reconnectAttempts,
+      hasListeners: this.listeners.size > 0 || this.ouraListeners.size > 0,
+    };
   }
 }
 

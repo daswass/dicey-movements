@@ -154,18 +154,15 @@ class NotificationService {
     }
   }
 
-  // Force refresh subscription (unsubscribe and resubscribe)
   private async forceRefreshSubscription(): Promise<void> {
     console.log("NotificationService: Force refreshing subscription...");
     try {
-      // First unsubscribe from existing subscription
       console.log("NotificationService: Unsubscribing from existing subscription...");
       await this.unsubscribeFromPushNotifications();
 
       // Wait a moment for cleanup
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Subscribe again with new device info (force mode)
       console.log("NotificationService: Creating new subscription...");
       const newSubscription = await this.subscribeToPushNotifications(true);
 
@@ -237,8 +234,6 @@ class NotificationService {
         if (existingSubscription) {
           return this.convertSubscription(existingSubscription);
         }
-      } else {
-        console.log("NotificationService: Force mode - skipping existing subscription check");
       }
 
       // Request permission if not granted (unless forcing)
@@ -248,8 +243,6 @@ class NotificationService {
           console.warn("NotificationService: Permission not granted for push notifications");
           return null;
         }
-      } else {
-        console.log("NotificationService: Force mode - skipping permission check");
       }
 
       // Subscribe to push notifications
@@ -260,8 +253,6 @@ class NotificationService {
         userVisibleOnly: true,
         applicationServerKey: applicationServerKey,
       });
-
-      console.log("NotificationService: Successfully subscribed to push notifications");
 
       // Save subscription to backend
       const convertedSubscription = this.convertSubscription(subscription);
@@ -620,7 +611,6 @@ class NotificationService {
       }
 
       await api.subscribeToPush(user.id, subscription);
-      console.log("NotificationService: Subscription saved to backend");
     } catch (error) {
       console.error("NotificationService: Error saving subscription to backend:", error);
     }

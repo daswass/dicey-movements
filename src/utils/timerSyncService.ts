@@ -1,3 +1,4 @@
+import { createSupabaseChannel, SupabaseChannelManager } from "./supabaseChannel";
 import { supabase } from "./supabaseClient";
 
 export interface TimerState {
@@ -18,11 +19,20 @@ class TimerSyncService {
   private syncInterval: NodeJS.Timeout | null = null;
   private isMaster: boolean = false;
   private lastSyncTime: string | null = null;
-  private realtimeSubscription: any = null;
+  private channelManager: SupabaseChannelManager;
   private masterStatusCallbacks: Set<(isMaster: boolean) => void> = new Set();
+  private currentStateChangeCallback: ((state: TimerState) => void) | null = null;
 
   constructor() {
     this.deviceId = this.generateDeviceId();
+    this.channelManager = createSupabaseChannel({
+      name: "timer-sync",
+      supabase,
+      onStatusChange: (status) => {},
+      onError: (error) => {
+        console.error("TimerSyncService: Error in channel:", error);
+      },
+    });
   }
 
   private generateDeviceId(): string {
@@ -90,7 +100,6 @@ class TimerSyncService {
     }
   }
 
-  // Stop timer sync (release master)
   async stopTimerSync(): Promise<boolean> {
     try {
       const {
@@ -102,9 +111,7 @@ class TimerSyncService {
         .from("profiles")
         .update({
           timer_master_device_id: null,
-          timer_start_time: null,
           timer_last_updated: new Date().toISOString(),
-          // Don't clear timer_duration - it's a user setting
         })
         .eq("id", user.id);
 
@@ -126,9 +133,7 @@ class TimerSyncService {
   // Transfer master to this device
   async becomeMaster(): Promise<boolean> {
     try {
-      // Prevent redundant calls - if already master, don't do anything
       if (this.isMaster) {
-        console.log("TimerSyncService: Already master, skipping becomeMaster call");
         return true;
       }
 
@@ -146,10 +151,9 @@ class TimerSyncService {
         timer_last_updated: now,
       };
 
-      // If there's no start time but there is a duration, set the start time
       if (!currentState?.startTime && (currentState?.duration || 0) > 0) {
         updateData.timer_start_time = now;
-        console.log("TimerSyncService: Setting start time when becoming master");
+        console.log("TimerSyncService: Setting start time");
       }
 
       const { error } = await supabase.from("profiles").update(updateData).eq("id", user.id);
@@ -203,9 +207,12 @@ class TimerSyncService {
   // Start real-time subscription for timer updates
   startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 5000): void {
     // Prevent multiple subscriptions
-    if (this.realtimeSubscription || this.syncInterval) {
+    if (this.channelManager.getStatus().isConnected || this.syncInterval) {
       return;
     }
+
+    // Store the callback for reconnection purposes
+    this.currentStateChangeCallback = onStateChange;
 
     // Don't get initial state here - let the normal initialization flow handle it
 
@@ -218,7 +225,6 @@ class TimerSyncService {
     this.syncInterval = setInterval(async () => {
       const state = await this.getTimerState();
       if (state && state.lastUpdated !== this.lastSyncTime) {
-        console.log("TimerSyncService: Fallback polling detected change");
         this.handleStateChange(state, onStateChange);
       }
     }, 30000); // 30 seconds as backup
@@ -233,31 +239,26 @@ class TimerSyncService {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      this.realtimeSubscription = supabase
-        .channel(`timer-sync-${user.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "profiles",
-            filter: `id=eq.${user.id}`,
-          },
-          (payload) => {
-            const newData = payload.new as any;
-            const state: TimerState = {
-              masterDeviceId: newData.timer_master_device_id,
-              startTime: newData.timer_start_time,
-              duration: newData.timer_duration || 0,
-              lastUpdated: newData.timer_last_updated,
-            };
+      this.channelManager.subscribe(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newData = payload.new as any;
+          const state: TimerState = {
+            masterDeviceId: newData.timer_master_device_id,
+            startTime: newData.timer_start_time,
+            duration: newData.timer_duration || 0,
+            lastUpdated: newData.timer_last_updated,
+          };
 
-            this.handleStateChange(state, onStateChange);
-          }
-        )
-        .subscribe((status) => {
-          console.log("TimerSyncService: Real-time subscription status:", status);
-        });
+          this.handleStateChange(state, onStateChange);
+        }
+      );
     } catch (error) {
       console.error("TimerSyncService: Error setting up real-time subscription:", error);
     }
@@ -290,14 +291,10 @@ class TimerSyncService {
     }
 
     // Stop real-time subscription
-    if (this.realtimeSubscription) {
-      try {
-        supabase.removeChannel(this.realtimeSubscription);
-      } catch (error) {
-        console.warn("TimerSyncService: Error removing channel:", error);
-      }
-      this.realtimeSubscription = null;
-    }
+    this.channelManager.disconnect();
+
+    // Reset state
+    this.currentStateChangeCallback = null;
   }
 
   async isDeviceMaster(): Promise<boolean> {
@@ -350,6 +347,26 @@ class TimerSyncService {
         console.error("TimerSyncService: Error in master status callback:", error);
       }
     });
+  }
+
+  // Cleanup method to remove event listeners
+  cleanup(): void {
+    this.stopPolling();
+    this.channelManager.cleanup();
+  }
+
+  // Get connection status for debugging
+  getConnectionStatus(): {
+    hasSubscription: boolean;
+    reconnectAttempts: number;
+    hasCallback: boolean;
+  } {
+    const status = this.channelManager.getStatus();
+    return {
+      hasSubscription: status.isConnected,
+      reconnectAttempts: status.reconnectAttempts,
+      hasCallback: !!this.currentStateChangeCallback,
+    };
   }
 }
 
