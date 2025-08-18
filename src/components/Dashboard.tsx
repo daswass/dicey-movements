@@ -374,9 +374,21 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       resetNotificationFlags();
       setIsRollAndStartMode(false); // Reset roll and start mode
 
+      // Reset timer to full duration when day rolls
+      if (userProfile?.timer_duration) {
+        console.log("Dashboard: Resetting timer to full duration:", userProfile.timer_duration);
+        onResetTimerToDuration(userProfile.timer_duration);
+      }
+
+      // Clear timer sync fields and update last session start
       const { error } = await supabase
         .from("profiles")
-        .update({ last_session_start: new Date().toISOString() })
+        .update({
+          last_session_start: new Date().toISOString(),
+          timer_master_device_id: null,
+          timer_start_time: null,
+          timer_last_updated: new Date().toISOString(),
+        })
         .eq("id", user.id);
       if (!error) {
         await fetchLastSessionStart();
@@ -386,6 +398,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       }
     }, [
       user?.id,
+      userProfile?.timer_duration,
+      onResetTimerToDuration,
       fetchLastSessionStart,
       fetchHistory,
       setLatestSession,
@@ -482,10 +496,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         setCurrentWorkoutComplete(false);
         setLatestSession(session);
 
-        // If we're in roll and start mode, start the timer after the roll
         if (isRollAndStartMode) {
           setIsRollAndStartMode(false);
-          onStartTimer();
         }
       },
       [isRollAndStartMode, onStartTimer]
