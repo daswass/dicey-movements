@@ -2,6 +2,16 @@ export type Exercise = {
   id: number;
   name: string;
   emoji: string;
+  splitId: string; // Which split this exercise belongs to
+};
+
+export type Split = {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  exercises: Exercise[];
+  isDefault?: boolean;
 };
 
 export type DiceRoll = {
@@ -25,4 +35,5 @@ export type ExerciseMultipliers = {
 export type AppSettings = {
   notificationsEnabled: boolean;
   darkMode: boolean;
+  userSplitId: string; // ID of the user's selected split
 };

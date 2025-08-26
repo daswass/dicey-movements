@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { getExerciseById } from "../data/exercises";
-import { DiceRoll, ExerciseMultipliers, WorkoutSession } from "../types";
+import { DiceRoll, ExerciseMultipliers, WorkoutSession, Split } from "../types";
 import Dice from "./Dice"; // 1. Import the Dice component
 import { notificationService } from "../utils/notificationService";
 
@@ -10,6 +10,7 @@ interface DiceRollerProps {
   rollCompleted: boolean;
   session?: WorkoutSession | null;
   autoRoll?: boolean; // New prop for auto-rolling
+  selectedSplit: Split; // The currently selected split
 }
 
 const DiceRoller: React.FC<DiceRollerProps> = ({
@@ -18,6 +19,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   rollCompleted,
   session,
   autoRoll = false,
+  selectedSplit,
 }) => {
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [diceValues, setDiceValues] = useState<DiceRoll | null>(null);
@@ -48,7 +50,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         const finalRepsDie = Math.floor(Math.random() * 6) + 1;
         setDiceValues({ exerciseDie: finalExerciseDie, repsDie: finalRepsDie });
         setIsRolling(false);
-        const exercise = getExerciseById(finalExerciseDie);
+        const exercise = getExerciseById(finalExerciseDie, selectedSplit.id);
         const exerciseMultiplier = multipliers[finalExerciseDie];
         const totalReps = finalRepsDie * exerciseMultiplier;
         const session: WorkoutSession = {
@@ -62,7 +64,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         onRollComplete(session);
       }
     }, interval);
-  }, [multipliers, onRollComplete]);
+  }, [multipliers, onRollComplete, selectedSplit.id]);
 
   // Auto-roll effect
   useEffect(() => {
@@ -102,7 +104,9 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         <div className="mb-6 text-center">
           <p className="text-lg">
             Roll result:{" "}
-            <span className="font-semibold">{getExerciseById(diceValues.exerciseDie).name}</span>
+            <span className="font-semibold">
+              {getExerciseById(diceValues.exerciseDie, selectedSplit.id).name}
+            </span>
             {" × "}
             <span className="font-semibold">{diceValues.repsDie}</span>
             <span className="text-blue-600 dark:text-blue-400">

@@ -1,5 +1,5 @@
 import React from "react";
-import { getExerciseById } from "../data/exercises";
+import { getExerciseById, getDefaultSplit } from "../data/exercises";
 import Dice from "./Dice";
 
 interface Activity {
@@ -51,7 +51,8 @@ const History: React.FC<HistoryProps> = ({ history }) => {
           </h3>
 
           {sessions.map((session) => {
-            const exercise = getExerciseById(session.exercise_id);
+            // Use default split for historical data (ideally we'd store the split ID with each activity)
+            const exercise = getExerciseById(session.exercise_id, getDefaultSplit().id);
             return (
               <div
                 key={session.id}

@@ -28,6 +28,7 @@ export interface UserProfile {
   timer_duration: number;
   notifications_enabled: boolean;
   notification_settings?: NotificationSettings;
+  user_split_id: string; // The ID of the split/workout routine the user has selected
 }
 
 export interface LeaderboardEntry {

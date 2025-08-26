@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getExerciseById } from "../data/exercises";
+import { getExerciseById, getDefaultSplit } from "../data/exercises";
 import { supabase } from "../utils/supabaseClient";
 
 interface Activity {
@@ -165,8 +165,8 @@ export const FriendActivity: React.FC = () => {
                   <div>
                     <div className="font-medium">{activity.username}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {getExerciseById(activity.exercise_id).emoji} {activity.reps}{" "}
-                      {activity.exercise_name}
+                      {getExerciseById(activity.exercise_id, getDefaultSplit().id).emoji}{" "}
+                      {activity.reps} {activity.exercise_name}
                       {activity.reps > 1 ? "s" : ""}
                     </div>
                   </div>

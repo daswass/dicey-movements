@@ -1,7 +1,7 @@
 import { Settings } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getExerciseById } from "../data/exercises";
-import { ExerciseMultipliers, WorkoutSession } from "../types";
+import { getExerciseById, getSplitById, getDefaultSplit } from "../data/exercises";
+import { ExerciseMultipliers, WorkoutSession, Split, Exercise } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementService } from "../utils/achievementService";
 import { activitySyncService } from "../utils/activitySyncService";
@@ -13,6 +13,7 @@ import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
 import ExerciseDisplay from "./ExerciseDisplay";
+import ExerciseInstructionsModal from "./ExerciseInstructionsModal";
 import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
@@ -55,6 +56,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
   }) => {
     const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
 
+    // State for selected split
+    const [selectedSplit, setSelectedSplit] = useState<Split>(getDefaultSplit());
+
     // DERIVED STATE: Multipliers based on exerciseCounts (since last_session_start)
     const multipliers: ExerciseMultipliers = useMemo(() => {
       const calculatedMultipliers: ExerciseMultipliers = {};
@@ -88,6 +92,10 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     // Add state for tracking workout completion loading
     const [isCompletingWorkout, setIsCompletingWorkout] = useState(false);
+
+    // Exercise instructions modal state
+    const [showExerciseModal, setShowExerciseModal] = useState(false);
+    const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
 
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
@@ -166,6 +174,20 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     useEffect(() => {
       if (user) fetchHistory();
     }, [user?.id, fetchHistory]);
+
+    // Load user's selected split from profile
+    useEffect(() => {
+      if (userProfile?.user_split_id) {
+        try {
+          const split = getSplitById(userProfile.user_split_id);
+          setSelectedSplit(split);
+        } catch (error) {
+          console.error("Dashboard: Error loading user split:", error);
+          // Fallback to default split
+          setSelectedSplit(getDefaultSplit());
+        }
+      }
+    }, [userProfile?.user_split_id]);
 
     // Subscribe to activity sync service for real-time workout updates
     useEffect(() => {
@@ -573,6 +595,41 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       [user?.id, onResetTimerToDuration, setUserProfile]
     );
 
+    const handleSplitChange = useCallback(
+      async (newSplitId: string) => {
+        const newSplit = getSplitById(newSplitId);
+        setSelectedSplit(newSplit);
+
+        // Reset exercise counts when switching splits
+        setExerciseCounts({});
+
+        // Update local state
+        setUserProfile((prev) => (prev ? { ...prev, user_split_id: newSplitId } : null));
+
+        // Save to database
+        if (user) {
+          try {
+            const { error } = await supabase
+              .from("profiles")
+              .update({ user_split_id: newSplitId })
+              .eq("id", user.id);
+
+            if (error) {
+              console.error("Error updating user split:", error);
+            }
+          } catch (error) {
+            console.error("Error updating user split:", error);
+          }
+        }
+      },
+      [setUserProfile, user]
+    );
+
+    const handleExerciseClick = useCallback((exercise: Exercise) => {
+      setSelectedExercise(exercise);
+      setShowExerciseModal(true);
+    }, []);
+
     // Memoize the main content to prevent unnecessary re-renders
     const mainContent = useMemo(() => {
       if ((timerComplete && !currentWorkoutComplete) || isRollAndStartMode) {
@@ -590,7 +647,18 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                 title={isMaster ? "Master Device" : "Slave Device"}
               />
             </button>
-            <h2 className="text-xl font-semibold mb-4">Roll the Dice</h2>
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold mb-2">Roll the Dice</h2>
+              <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                <span>Active Split:</span>
+                <span className="font-medium text-blue-600 dark:text-blue-400">
+                  {selectedSplit.name}
+                </span>
+                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
+                  {selectedSplit.exercises.length} exercises
+                </span>
+              </div>
+            </div>
             <DiceRoller
               key={`dice-roller-${latestSession ? "completed" : "ready"}`}
               onRollComplete={handleDiceRoll}
@@ -598,6 +666,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               rollCompleted={!!latestSession}
               session={latestSession}
               autoRoll={isRollAndStartMode}
+              selectedSplit={selectedSplit}
             />
           </div>
         );
@@ -638,6 +707,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       handleRollAndStart,
       showSettings,
       isMaster,
+      selectedSplit,
+      handleSplitChange,
+      handleExerciseClick,
     ]);
 
     const currentWorkoutContent = useMemo(() => {
@@ -682,10 +754,24 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             {(() => {
               return null;
             })()}
-            {stableUserProfile && <SocialFeatures userProfile={stableUserProfile} />}
+            {stableUserProfile && (
+              <SocialFeatures
+                userProfile={stableUserProfile}
+                selectedSplitId={selectedSplit.id}
+                onSplitChange={handleSplitChange}
+              />
+            )}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-xl font-semibold">Stats</h3>
+                <div className="flex items-center space-x-3">
+                  <h3 className="text-xl font-semibold">Stats</h3>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                    <span>•</span>
+                    <span className="font-medium text-blue-600 dark:text-blue-400">
+                      {selectedSplit.name}
+                    </span>
+                  </div>
+                </div>
                 <div className="flex space-x-2">
                   <button
                     onClick={() => setShowAchievements(!showAchievements)}
@@ -749,18 +835,19 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               </h4>
               <div className="space-y-2">
                 {Object.entries(multipliers).map(([exerciseId, multiplier]) => {
-                  const exercise = getExerciseById(Number(exerciseId));
+                  const exercise = getExerciseById(Number(exerciseId), selectedSplit.id);
                   const repsToday = statsData.repsPerExerciseToday[Number(exerciseId)] || 0;
                   return (
                     <div
                       key={exerciseId}
                       className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
                       {/* Exercise Name (stays on the left) */}
-                      <span
-                        className="truncate text-gray-800 dark:text-gray-200"
-                        title={exercise.name}>
+                      <button
+                        onClick={() => handleExerciseClick(exercise)}
+                        className="truncate text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer text-left flex-1"
+                        title={`Click to see instructions for ${exercise.name}`}>
                         {exercise.name}
-                      </span>
+                      </button>
 
                       {/* NEW: A flex container for the stats on the right */}
                       <div className="flex items-baseline gap-x-4">
@@ -852,6 +939,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             </div>
           </div>
         )}
+
+        {/* Exercise Instructions Modal */}
+        <ExerciseInstructionsModal
+          exercise={selectedExercise}
+          isOpen={showExerciseModal}
+          onClose={() => setShowExerciseModal(false)}
+        />
       </div>
     );
   },
