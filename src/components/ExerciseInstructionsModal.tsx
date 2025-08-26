@@ -343,6 +343,63 @@ const ExerciseInstructionsModal: React.FC<ExerciseInstructionsModalProps> = ({
       ],
       muscles: ["Cardiovascular", "Calves", "Core", "Shoulders"],
     },
+    "Dumbbell Curl": {
+      description: "A classic arm exercise that targets the biceps using dumbbells.",
+      steps: [
+        "Stand with feet shoulder-width apart, holding dumbbells at your sides",
+        "Keep your elbows close to your body and palms facing forward",
+        "Curl the dumbbells up toward your shoulders",
+        "Squeeze your biceps at the top of the movement",
+        "Lower the dumbbells back down with control",
+        "Repeat the movement",
+      ],
+      tips: [
+        "Keep your upper arms stationary throughout the movement",
+        "Don't swing your body or use momentum",
+        "Focus on the bicep contraction at the top",
+        "Control the negative (lowering) portion of the movement",
+        "Keep your core engaged to prevent back arching",
+      ],
+      muscles: ["Biceps", "Forearms", "Core"],
+    },
+    "Dumbbell Kickback": {
+      description: "An isolation exercise that targets the triceps using dumbbells.",
+      steps: [
+        "Stand with feet shoulder-width apart, holding a dumbbell in one hand",
+        "Bend forward at the waist, keeping your back straight",
+        "Bend your elbow to 90 degrees, keeping your upper arm parallel to the ground",
+        "Extend your arm straight back, squeezing your triceps",
+        "Hold briefly at the top, then return to the starting position",
+        "Repeat and then switch arms",
+      ],
+      tips: [
+        "Keep your upper arm stationary throughout the movement",
+        "Focus on the tricep contraction at the top",
+        "Don't let your elbow move up and down",
+        "Keep your back straight and core engaged",
+        "Use a weight that allows you to maintain proper form",
+      ],
+      muscles: ["Triceps", "Shoulders", "Core"],
+    },
+    "Leg Raise": {
+      description: "A core exercise that targets the lower abdominal muscles.",
+      steps: [
+        "Lie on your back with your legs straight and arms at your sides",
+        "Keep your lower back pressed firmly against the ground",
+        "Lift your legs up toward the ceiling, keeping them straight",
+        "Continue lifting until your legs are perpendicular to the ground",
+        "Lower your legs back down with control, stopping just before they touch the ground",
+        "Repeat the movement",
+      ],
+      tips: [
+        "Keep your lower back pressed to the ground throughout",
+        "Don't let your legs swing or use momentum",
+        "Focus on using your lower abs, not your hip flexors",
+        "Breathe steadily throughout the movement",
+        "Start with bent knees if straight legs are too challenging",
+      ],
+      muscles: ["Lower Abs", "Core", "Hip Flexors"],
+    },
   };
 
   const instructions = exerciseInstructions[exercise.name] || {

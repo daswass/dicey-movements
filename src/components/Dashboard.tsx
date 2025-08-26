@@ -600,9 +600,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         const newSplit = getSplitById(newSplitId);
         setSelectedSplit(newSplit);
 
-        // Reset exercise counts when switching splits
-        setExerciseCounts({});
-
         // Update local state
         setUserProfile((prev) => (prev ? { ...prev, user_split_id: newSplitId } : null));
 

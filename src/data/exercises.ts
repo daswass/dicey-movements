@@ -59,6 +59,20 @@ export const splits: Split[] = [
       { id: 6, name: "Jump Rope", emoji: "🪢", splitId: "cardio" },
     ],
   },
+  {
+    id: "arms-and-abs",
+    name: "Arms and Abs",
+    description: "Focus on arms and abs",
+    emoji: "💪",
+    exercises: [
+      { id: 1, name: "Pushup", emoji: "💪", splitId: "arms-and-abs" },
+      { id: 2, name: "Situp", emoji: "🫃", splitId: "arms-and-abs" },
+      { id: 3, name: "Diamond Pushup", emoji: "💎", splitId: "arms-and-abs" },
+      { id: 4, name: "Dumbbell Curl", emoji: "💪", splitId: "arms-and-abs" },
+      { id: 5, name: "Dumbbell Kickback", emoji: "🔩", splitId: "arms-and-abs" },
+      { id: 6, name: "Leg Raise", emoji: "🦵", splitId: "arms-and-abs" },
+    ],
+  },
 ];
 
 // Get the default split
