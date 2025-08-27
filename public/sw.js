@@ -1,20 +1,27 @@
-// Service Worker for Push Notifications
-// This service worker follows standard practices
+// Service Worker for Push Notifications with Better Cache Management
+// This service worker follows standard practices and ensures updates are delivered
 
-// Use a stable cache name that doesn't change unless the service worker actually changes
-const CACHE_NAME = "dicey-movements-v1";
-const STATIC_CACHE_NAME = "dicey-movements-static-v1";
+// Use a timestamp-based cache name that changes with each deployment
+const CACHE_VERSION = Date.now().toString();
+const CACHE_NAME = `dicey-movements-v${CACHE_VERSION}`;
+const STATIC_CACHE_NAME = `dicey-movements-static-v${CACHE_VERSION}`;
 
-// Files to cache for offline functionality
-const STATIC_FILES = ["/", "/favicon.svg", "/manifest.json", "/index.html"];
+// Add cache busting query parameter to force fresh content
+const CACHE_BUST = `?v=${CACHE_VERSION}`;
+
+// Files to cache for offline functionality (excluding index.html to ensure updates)
+const STATIC_FILES = ["/favicon.svg", "/manifest.json"];
+
+// iOS-specific: Force cache invalidation on every activation
+const FORCE_REFRESH = true;
 
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
-  console.log("Service Worker: Installing new version");
+  console.log("Service Worker: Installing new version", CACHE_VERSION);
 
   event.waitUntil(
     Promise.all([
-      // Cache static files
+      // Cache static files (excluding index.html)
       caches.open(STATIC_CACHE_NAME).then((cache) => {
         console.log("Service Worker: Caching static files");
         return cache.addAll(STATIC_FILES);
@@ -27,20 +34,15 @@ self.addEventListener("install", (event) => {
 
 // Activate event - clean up old caches and claim clients
 self.addEventListener("activate", (event) => {
-  console.log("Service Worker: Activating new version");
+  console.log("Service Worker: Activating new version", CACHE_VERSION);
 
   event.waitUntil(
     Promise.all([
-      // Clean up old caches
+      // Clean up ALL old caches to ensure fresh content
       caches.keys().then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter(
-              (cacheName) =>
-                cacheName !== CACHE_NAME &&
-                cacheName !== STATIC_CACHE_NAME &&
-                cacheName.startsWith("dicey-movements")
-            )
+            .filter((cacheName) => cacheName !== CACHE_NAME && cacheName !== STATIC_CACHE_NAME)
             .map((cacheName) => {
               console.log("Service Worker: Deleting old cache:", cacheName);
               return caches.delete(cacheName);
@@ -49,6 +51,14 @@ self.addEventListener("activate", (event) => {
       }),
       // Claim all clients immediately
       self.clients.claim(),
+      // iOS-specific: Force refresh all clients
+      FORCE_REFRESH
+        ? self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({ type: "FORCE_REFRESH", version: CACHE_VERSION });
+            });
+          })
+        : Promise.resolve(),
     ])
   );
 });
@@ -290,7 +300,7 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// Fetch event for offline functionality
+// Fetch event for offline functionality with better update handling
 self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") {
@@ -307,15 +317,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      // Return cached version if available
-      if (response) {
-        return response;
-      }
+  // For HTML files, always fetch fresh from network first
+  if (event.request.destination === "document" || event.request.url.endsWith(".html")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // Don't cache HTML files to ensure updates
+          return response;
+        })
+        .catch(() => {
+          // Fallback to cache only if network fails
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
 
-      // Otherwise, fetch from network
-      return fetch(event.request).then((response) => {
+  // For other assets, use network-first strategy
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
         // Don't cache non-successful responses
         if (!response || response.status !== 200 || response.type !== "basic") {
           return response;
@@ -324,13 +345,18 @@ self.addEventListener("fetch", (event) => {
         // Clone the response
         const responseToCache = response.clone();
 
-        // Cache the response for future use
-        caches.open(STATIC_CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
+        // Cache the response for future use (but not HTML files)
+        if (event.request.destination !== "document") {
+          caches.open(STATIC_CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
 
         return response;
-      });
-    })
+      })
+      .catch(() => {
+        // Fallback to cache if network fails
+        return caches.match(event.request);
+      })
   );
 });

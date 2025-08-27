@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run update-sw",
+    "update-sw": "node scripts/update-service-worker.js",
+    "test-update": "node scripts/test-update.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

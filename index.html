@@ -3,20 +3,53 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#3b82f6" />
     <meta
       name="description"
       content="A fitness app that uses dice to determine your workout routine" />
     <link rel="manifest" href="/manifest.json" />
+
+    <!-- PWA Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Dicey Movements" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- iOS-specific cache busting -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+
+    <!-- Cache control headers -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
     <title>Dicey Movements</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- iOS PWA cache busting script -->
+    <script>
+      // Force refresh on iOS PWA if needed
+      if (window.navigator.standalone) {
+        // This is running as a PWA
+        const lastUpdate = localStorage.getItem("lastUpdate");
+        const currentTime = Date.now();
+
+        // Check if we need to force refresh (every 24 hours)
+        if (!lastUpdate || currentTime - parseInt(lastUpdate) > 24 * 60 * 60 * 1000) {
+          localStorage.setItem("lastUpdate", currentTime.toString());
+          // Force reload to ensure fresh content
+          window.location.reload();
+        }
+      }
+    </script>
   </body>
 </html>
