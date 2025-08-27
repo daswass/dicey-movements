@@ -21,6 +21,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   autoRoll = false,
   selectedSplit,
 }) => {
+  console.log("DiceRoller: Received selectedSplit prop:", selectedSplit);
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [diceValues, setDiceValues] = useState<DiceRoll | null>(null);
 
@@ -50,7 +51,15 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         const finalRepsDie = Math.floor(Math.random() * 6) + 1;
         setDiceValues({ exerciseDie: finalExerciseDie, repsDie: finalRepsDie });
         setIsRolling(false);
+        console.log(
+          "DiceRoller: Rolling for split:",
+          selectedSplit.id,
+          "with name:",
+          selectedSplit.name
+        );
+        console.log("DiceRoller: Exercise die value:", finalExerciseDie);
         const exercise = getExerciseById(finalExerciseDie, selectedSplit.id);
+        console.log("DiceRoller: Got exercise:", exercise);
         const exerciseMultiplier = multipliers[finalExerciseDie];
         const totalReps = finalRepsDie * exerciseMultiplier;
         const session: WorkoutSession = {
@@ -61,10 +70,11 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
           reps: totalReps,
           multiplier: exerciseMultiplier,
         };
+        console.log("DiceRoller: Created session:", session);
         onRollComplete(session);
       }
     }, interval);
-  }, [multipliers, onRollComplete, selectedSplit.id]);
+  }, [multipliers, onRollComplete, selectedSplit]);
 
   // Auto-roll effect
   useEffect(() => {

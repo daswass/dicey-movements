@@ -1,6 +1,6 @@
-import { Settings } from "lucide-react";
+import { Settings, Dumbbell } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getExerciseById, getSplitById, getDefaultSplit } from "../data/exercises";
+import { getExerciseById, getSplitById, getDefaultSplit, splits } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession, Split, Exercise } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementService } from "../utils/achievementService";
@@ -96,6 +96,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     // Exercise instructions modal state
     const [showExerciseModal, setShowExerciseModal] = useState(false);
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+
+    // Splits panel state for Workout Timer
+    const [showSplitsPanel, setShowSplitsPanel] = useState(false);
 
     // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
@@ -515,6 +518,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     const handleDiceRoll = useCallback(
       (session: any) => {
+        console.log("Dashboard: Received dice roll session:", session);
+        console.log("Dashboard: Current selectedSplit:", selectedSplit);
+        console.log("Dashboard: Exercise in session:", session.exercise);
         setCurrentWorkoutComplete(false);
         setLatestSession(session);
 
@@ -522,7 +528,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           setIsRollAndStartMode(false);
         }
       },
-      [isRollAndStartMode, onStartTimer]
+      [isRollAndStartMode, onStartTimer, selectedSplit]
     );
 
     // Memoize the sessionHistory to prevent unnecessary recalculations
@@ -597,8 +603,11 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     const handleSplitChange = useCallback(
       async (newSplitId: string) => {
+        console.log("handleSplitChange: Changing to split:", newSplitId);
         const newSplit = getSplitById(newSplitId);
+        console.log("handleSplitChange: Got split:", newSplit);
         setSelectedSplit(newSplit);
+        console.log("handleSplitChange: Updated selectedSplit state");
 
         // Update local state
         setUserProfile((prev) => (prev ? { ...prev, user_split_id: newSplitId } : null));
@@ -613,6 +622,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
             if (error) {
               console.error("Error updating user split:", error);
+            } else {
+              console.log("handleSplitChange: Successfully updated database");
             }
           } catch (error) {
             console.error("Error updating user split:", error);
@@ -656,24 +667,39 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                 </span>
               </div>
             </div>
-            <DiceRoller
-              key={`dice-roller-${latestSession ? "completed" : "ready"}`}
-              onRollComplete={handleDiceRoll}
-              multipliers={multipliers}
-              rollCompleted={!!latestSession}
-              session={latestSession}
-              autoRoll={isRollAndStartMode}
-              selectedSplit={selectedSplit}
-            />
+            {userProfile?.user_split_id ? (
+              <DiceRoller
+                key={`dice-roller-${latestSession ? "completed" : "ready"}`}
+                onRollComplete={handleDiceRoll}
+                multipliers={multipliers}
+                rollCompleted={!!latestSession}
+                session={latestSession}
+                autoRoll={isRollAndStartMode}
+                selectedSplit={selectedSplit}
+              />
+            ) : (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-600 dark:text-gray-400">Loading workout split...</p>
+              </div>
+            )}
           </div>
         );
       } else if (!latestSession && stableUserProfile) {
         return (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-              <Settings size={20} className="text-gray-500 dark:text-gray-400" />
+            <div className="absolute top-4 right-4 flex space-x-2">
+              <button
+                onClick={() => setShowSplitsPanel(!showSplitsPanel)}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Select Workout Split">
+                <Dumbbell size={20} className="text-gray-500 dark:text-gray-400" />
+              </button>
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <Settings size={20} className="text-gray-500 dark:text-gray-400" />
+              </button>
               {/* Master/Slave indicator dot */}
               <div
                 className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
@@ -681,13 +707,47 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                 }`}
                 title={isMaster ? "Master Device" : "Slave Device"}
               />
-            </button>
+            </div>
             <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
             <Timer
               duration={stableUserProfile?.timer_duration}
               onComplete={handleTimerComplete}
               onRollAndStart={handleRollAndStart}
             />
+
+            {/* Splits Panel */}
+            {showSplitsPanel && userProfile?.user_split_id && (
+              <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Select Workout Split
+                  </h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {splits.map((split) => (
+                    <button
+                      key={split.id}
+                      onClick={() => {
+                        handleSplitChange(split.id);
+                        setShowSplitsPanel(false);
+                      }}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        selectedSplit.id === split.id
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                          : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300"
+                      }`}>
+                      <div className="text-center">
+                        <div className="text-2xl mb-1">{split.emoji}</div>
+                        <div className="font-medium text-sm">{split.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {split.exercises.length} exercises
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -707,6 +767,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       selectedSplit,
       handleSplitChange,
       handleExerciseClick,
+      showSplitsPanel,
+      setShowSplitsPanel,
+      splits,
     ]);
 
     const currentWorkoutContent = useMemo(() => {
@@ -743,7 +806,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           <div className="col-span-1 lg:col-span-2 space-y-6">
             {mainContent}
             {currentWorkoutContent}
-            <History history={sessionHistory as any[]} />
+            <History history={sessionHistory as any[]} selectedSplit={selectedSplit} />
             {showAchievements && <Achievements userProfile={userProfile} />}
           </div>
 
@@ -754,7 +817,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             {stableUserProfile && (
               <SocialFeatures
                 userProfile={stableUserProfile}
-                selectedSplitId={selectedSplit.id}
+                selectedSplit={selectedSplit}
                 onSplitChange={handleSplitChange}
               />
             )}

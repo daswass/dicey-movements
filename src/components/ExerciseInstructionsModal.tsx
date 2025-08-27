@@ -1,5 +1,6 @@
 import React from "react";
 import { Exercise } from "../types";
+import { getExerciseEmoji } from "../data/exercises";
 
 interface ExerciseInstructionsModalProps {
   exercise: Exercise | null;
@@ -400,6 +401,28 @@ const ExerciseInstructionsModal: React.FC<ExerciseInstructionsModalProps> = ({
       ],
       muscles: ["Lower Abs", "Core", "Hip Flexors"],
     },
+    "Arnold Press": {
+      description:
+        "A compound shoulder exercise that combines a shoulder press with rotation, targeting multiple shoulder muscles.",
+      steps: [
+        "Sit on a bench with back support or stand with feet shoulder-width apart",
+        "Hold dumbbells at shoulder level with palms facing your body",
+        "Start the movement by rotating your wrists outward as you press up",
+        "Continue pressing the dumbbells overhead while rotating your palms forward",
+        "At the top, your palms should face forward with arms fully extended",
+        "Lower the dumbbells back down with control, reversing the rotation",
+        "Return to starting position with palms facing your body",
+      ],
+      tips: [
+        "Keep your core engaged throughout the movement",
+        "Don't arch your back during the press",
+        "Control the rotation - don't let the dumbbells swing",
+        "Breathe steadily: exhale on the press, inhale on the descent",
+        "Start with lighter weights to perfect the form",
+        "Keep your head in a neutral position",
+      ],
+      muscles: ["Deltoids", "Triceps", "Upper Chest", "Core"],
+    },
   };
 
   const instructions = exerciseInstructions[exercise.name] || {
@@ -415,7 +438,7 @@ const ExerciseInstructionsModal: React.FC<ExerciseInstructionsModalProps> = ({
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
-              <span className="text-4xl">{exercise.emoji}</span>
+              <span className="text-4xl">{getExerciseEmoji(exercise.name)}</span>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{exercise.name}</h2>
             </div>
             <button

@@ -1,6 +1,7 @@
 import { CheckCircle, Clock } from "lucide-react";
 import React from "react";
 import { WorkoutSession } from "../types";
+import { getExerciseEmoji } from "../data/exercises";
 
 interface ExerciseDisplayProps {
   session: WorkoutSession;
@@ -17,9 +18,9 @@ const ExerciseDisplay: React.FC<ExerciseDisplayProps> = ({ session }) => {
   return (
     <div className="flex flex-col md:flex-row items-center">
       <div className="text-center md:text-left flex-1">
-        <div className="flex items-center justify-center md:justify-start mb-2">
-          <span className="text-5xl mr-2">{exercise.emoji}</span>
-          <h3 className="text-2xl font-bold">{exercise.name}</h3>
+        <div className="flex items-center justify-center mb-6">
+          <span className="text-5xl mr-2">{getExerciseEmoji(exercise.name)}</span>
+          <h2 className="text-3xl font-bold">{exercise.name}</h2>
         </div>
 
         <div className="flex flex-col space-y-2">

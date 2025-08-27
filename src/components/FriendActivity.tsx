@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { getExerciseById, getDefaultSplit } from "../data/exercises";
+import { getExerciseById, getExerciseEmoji } from "../data/exercises";
 import { supabase } from "../utils/supabaseClient";
+import { Split } from "../types";
 
 interface Activity {
   id: string;
@@ -14,7 +15,11 @@ interface Activity {
   username: string;
 }
 
-export const FriendActivity: React.FC = () => {
+interface FriendActivityProps {
+  selectedSplit: Split;
+}
+
+export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +170,9 @@ export const FriendActivity: React.FC = () => {
                   <div>
                     <div className="font-medium">{activity.username}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {getExerciseById(activity.exercise_id, getDefaultSplit().id).emoji}{" "}
+                      {getExerciseEmoji(
+                        getExerciseById(activity.exercise_id, selectedSplit.id).name
+                      )}{" "}
                       {activity.reps} {activity.exercise_name}
                       {activity.reps > 1 ? "s" : ""}
                     </div>

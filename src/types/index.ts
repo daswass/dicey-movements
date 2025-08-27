@@ -1,7 +1,7 @@
 export type Exercise = {
   id: number;
   name: string;
-  emoji: string;
+  emoji?: string; // Optional since we now get it from centralized mapping
   splitId: string; // Which split this exercise belongs to
 };
 

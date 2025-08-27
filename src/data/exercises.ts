@@ -1,5 +1,37 @@
 import { Exercise, Split } from "../types";
 
+// Centralized emoji mapping for all exercises
+export const exerciseEmojis: Record<string, string> = {
+  "Jumping Jack": "🦘",
+  Pushup: "🙇",
+  Burpee: "↕️",
+  Squat: "🦵",
+  Situp: "🫃",
+  Pullup: "🧗",
+  "Diamond Pushup": "💎",
+  "Incline Pushup": "📈",
+  "Tricep Dip": "⬇️",
+  "Pike Pushup": "🦈",
+  "Arnold Press": "🤷‍♂️",
+  Lunge: "🚶",
+  "Jump Squat": "🦘",
+  "Calf Raise": "🦿",
+  "Glute Bridge": "🍑",
+  "Wall Sit": "🧱",
+  "Mountain Climber": "🏔️",
+  "High Knees": "🦵",
+  "Butt Kicks": "🍑",
+  "Jump Rope": "🪢",
+  "Dumbbell Curl": "💪",
+  "Dumbbell Kickback": "🔩",
+  "Leg Raise": "🦵",
+};
+
+// Helper function to get emoji for an exercise
+export const getExerciseEmoji = (exerciseName: string): string => {
+  return exerciseEmojis[exerciseName] || "🏃‍♂️"; // Default emoji if not found
+};
+
 // Define all available splits
 export const splits: Split[] = [
   {
@@ -9,12 +41,12 @@ export const splits: Split[] = [
     isDefault: true,
     emoji: "🏋️",
     exercises: [
-      { id: 1, name: "Jumping Jack", emoji: "🙆‍♂️", splitId: "full-body" },
-      { id: 2, name: "Pushup", emoji: "💪", splitId: "full-body" },
-      { id: 3, name: "Burpee", emoji: "↕️", splitId: "full-body" },
-      { id: 4, name: "Squat", emoji: "🦵", splitId: "full-body" },
-      { id: 5, name: "Situp", emoji: "🫃", splitId: "full-body" },
-      { id: 6, name: "Pullup", emoji: "🧗", splitId: "full-body" },
+      { id: 1, name: "Jumping Jack", splitId: "full-body" },
+      { id: 2, name: "Pushup", splitId: "full-body" },
+      { id: 3, name: "Burpee", splitId: "full-body" },
+      { id: 4, name: "Squat", splitId: "full-body" },
+      { id: 5, name: "Situp", splitId: "full-body" },
+      { id: 6, name: "Pullup", splitId: "full-body" },
     ],
   },
   {
@@ -23,12 +55,12 @@ export const splits: Split[] = [
     description: "Focus on chest, arms, and shoulders",
     emoji: "💪",
     exercises: [
-      { id: 1, name: "Pushup", emoji: "💪", splitId: "upper-body" },
-      { id: 2, name: "Pullup", emoji: "🧗", splitId: "upper-body" },
-      { id: 3, name: "Diamond Pushup", emoji: "💎", splitId: "upper-body" },
-      { id: 4, name: "Incline Pushup", emoji: "📈", splitId: "upper-body" },
-      { id: 5, name: "Tricep Dip", emoji: "⬇️", splitId: "upper-body" },
-      { id: 6, name: "Pike Pushup", emoji: "🦈", splitId: "upper-body" },
+      { id: 1, name: "Pushup", splitId: "upper-body" },
+      { id: 2, name: "Pullup", splitId: "upper-body" },
+      { id: 3, name: "Diamond Pushup", splitId: "upper-body" },
+      { id: 4, name: "Incline Pushup", splitId: "upper-body" },
+      { id: 5, name: "Tricep Dip", splitId: "upper-body" },
+      { id: 6, name: "Pike Pushup", splitId: "upper-body" },
     ],
   },
   {
@@ -37,12 +69,12 @@ export const splits: Split[] = [
     description: "Focus on legs and glutes",
     emoji: "🦵",
     exercises: [
-      { id: 1, name: "Squat", emoji: "🦵", splitId: "lower-body" },
-      { id: 2, name: "Lunge", emoji: "🚶", splitId: "lower-body" },
-      { id: 3, name: "Jump Squat", emoji: "🦘", splitId: "lower-body" },
-      { id: 4, name: "Calf Raise", emoji: "🦿", splitId: "lower-body" },
-      { id: 5, name: "Glute Bridge", emoji: "🍑", splitId: "lower-body" },
-      { id: 6, name: "Wall Sit", emoji: "🧱", splitId: "lower-body" },
+      { id: 1, name: "Squat", splitId: "lower-body" },
+      { id: 2, name: "Lunge", splitId: "lower-body" },
+      { id: 3, name: "Jump Squat", splitId: "lower-body" },
+      { id: 4, name: "Calf Raise", splitId: "lower-body" },
+      { id: 5, name: "Glute Bridge", splitId: "lower-body" },
+      { id: 6, name: "Wall Sit", splitId: "lower-body" },
     ],
   },
   {
@@ -51,12 +83,12 @@ export const splits: Split[] = [
     description: "High-intensity cardiovascular exercises",
     emoji: "🏃‍➡️",
     exercises: [
-      { id: 1, name: "Jumping Jack", emoji: "🙆‍♂️", splitId: "cardio" },
-      { id: 2, name: "Burpee", emoji: "↕️", splitId: "cardio" },
-      { id: 3, name: "Mountain Climber", emoji: "🏔️", splitId: "cardio" },
-      { id: 4, name: "High Knees", emoji: "🦵", splitId: "cardio" },
-      { id: 5, name: "Butt Kicks", emoji: "🍑", splitId: "cardio" },
-      { id: 6, name: "Jump Rope", emoji: "🪢", splitId: "cardio" },
+      { id: 1, name: "Jumping Jack", splitId: "cardio" },
+      { id: 2, name: "Burpee", splitId: "cardio" },
+      { id: 3, name: "Mountain Climber", splitId: "cardio" },
+      { id: 4, name: "High Knees", splitId: "cardio" },
+      { id: 5, name: "Butt Kicks", splitId: "cardio" },
+      { id: 6, name: "Jump Rope", splitId: "cardio" },
     ],
   },
   {
@@ -65,12 +97,12 @@ export const splits: Split[] = [
     description: "Focus on arms and abs",
     emoji: "💪",
     exercises: [
-      { id: 1, name: "Pushup", emoji: "💪", splitId: "arms-and-abs" },
-      { id: 2, name: "Situp", emoji: "🫃", splitId: "arms-and-abs" },
-      { id: 3, name: "Diamond Pushup", emoji: "💎", splitId: "arms-and-abs" },
-      { id: 4, name: "Dumbbell Curl", emoji: "💪", splitId: "arms-and-abs" },
-      { id: 5, name: "Dumbbell Kickback", emoji: "🔩", splitId: "arms-and-abs" },
-      { id: 6, name: "Leg Raise", emoji: "🦵", splitId: "arms-and-abs" },
+      { id: 1, name: "Pushup", splitId: "arms-and-abs" },
+      { id: 2, name: "Situp", splitId: "arms-and-abs" },
+      { id: 3, name: "Arnold Press", splitId: "arms-and-abs" },
+      { id: 4, name: "Dumbbell Curl", splitId: "arms-and-abs" },
+      { id: 5, name: "Dumbbell Kickback", splitId: "arms-and-abs" },
+      { id: 6, name: "Leg Raise", splitId: "arms-and-abs" },
     ],
   },
 ];
@@ -97,8 +129,11 @@ export const getExercisesBySplitId = (splitId: string): Exercise[] => {
 
 // Get exercise by ID within a specific split
 export const getExerciseById = (id: number, splitId: string): Exercise => {
+  console.log("getExerciseById: Looking for exercise ID", id, "in split", splitId);
   const exercises = getExercisesBySplitId(splitId);
+  console.log("getExerciseById: Found exercises for split:", exercises);
   const exercise = exercises.find((ex) => ex.id === id);
+  console.log("getExerciseById: Found exercise:", exercise);
   if (!exercise) {
     throw new Error(`Exercise with id ${id} not found in split ${splitId}`);
   }

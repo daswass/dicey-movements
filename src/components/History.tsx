@@ -1,5 +1,6 @@
 import React from "react";
-import { getExerciseById, getDefaultSplit } from "../data/exercises";
+import { getExerciseById, getExerciseEmoji } from "../data/exercises";
+import { Split } from "../types";
 import Dice from "./Dice";
 
 interface Activity {
@@ -18,9 +19,10 @@ interface Activity {
 
 interface HistoryProps {
   history: Activity[];
+  selectedSplit: Split;
 }
 
-const History: React.FC<HistoryProps> = ({ history }) => {
+const History: React.FC<HistoryProps> = ({ history, selectedSplit }) => {
   if (history.length === 0) {
     return (
       <div className="text-center py-6">
@@ -51,8 +53,8 @@ const History: React.FC<HistoryProps> = ({ history }) => {
           </h3>
 
           {sessions.map((session) => {
-            // Use default split for historical data (ideally we'd store the split ID with each activity)
-            const exercise = getExerciseById(session.exercise_id, getDefaultSplit().id);
+            // Use the currently selected split to display exercise names
+            const exercise = getExerciseById(session.exercise_id, selectedSplit.id);
             return (
               <div
                 key={session.id}
@@ -60,7 +62,7 @@ const History: React.FC<HistoryProps> = ({ history }) => {
                 <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4">
                   {/* Column 1: Exercise Info */}
                   <div className="flex items-center">
-                    <span className="text-2xl mr-3">{exercise.emoji}</span>
+                    <span className="text-2xl mr-3">{getExerciseEmoji(exercise.name)}</span>
                     <div>
                       <h4 className="font-medium">{exercise.name}</h4>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
