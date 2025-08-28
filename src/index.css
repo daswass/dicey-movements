@@ -53,7 +53,7 @@
 }
 
 .flash-green {
-  animation: green-flash 2s ease-out;
+  animation: green-flash 1s ease-out;
 }
 
 .flash-red {

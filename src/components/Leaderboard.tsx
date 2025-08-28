@@ -176,9 +176,14 @@ const LeaderboardComponent: React.FC = () => {
 
         if (previousScore !== undefined && currentScore !== previousScore) {
           scoreChange = currentScore > previousScore ? "increase" : "decrease";
+          // Delay updating the previous score to allow the flash animation to complete
+          setTimeout(() => {
+            previousEntriesRef.current.set(userId, currentScore);
+          }, 1000); // 1 second to match the CSS animation duration
+        } else {
+          // Only update immediately if there's no change
+          previousEntriesRef.current.set(userId, currentScore);
         }
-
-        previousEntriesRef.current.set(userId, currentScore);
 
         return {
           id: userId,
@@ -257,9 +262,14 @@ const LeaderboardComponent: React.FC = () => {
 
         if (previousScore !== undefined && steps !== previousScore) {
           scoreChange = steps > previousScore ? "increase" : "decrease";
+          // Delay updating the previous score to allow the flash animation to complete
+          setTimeout(() => {
+            previousEntriesRef.current.set(profile.id, steps);
+          }, 1000); // 1 second to match the CSS animation duration
+        } else {
+          // Only update immediately if there's no change
+          previousEntriesRef.current.set(profile.id, steps);
         }
-
-        previousEntriesRef.current.set(profile.id, steps);
 
         return {
           id: profile.id,
