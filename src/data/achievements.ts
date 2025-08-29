@@ -15,7 +15,7 @@ export interface AchievementDefinition {
       | "days_active"
       | "perfect_rolls";
     value: number;
-    exerciseId?: number; // For exercise-specific achievements
+    exerciseName?: string; // For exercise-specific achievements
   };
   rarity: "common" | "uncommon" | "rare" | "epic" | "legendary";
   points: number;
@@ -100,8 +100,8 @@ export const achievements: AchievementDefinition[] = [
       type: "single_workout_reps",
       value: 100,
     },
-    rarity: "uncommon",
-    points: 30,
+    rarity: "rare",
+    points: 55,
   },
   {
     id: "pushup_pro",
@@ -112,10 +112,66 @@ export const achievements: AchievementDefinition[] = [
     criteria: {
       type: "total_reps",
       value: 50,
-      exerciseId: 2, // Pushup
+      exerciseName: "Pushup",
     },
     rarity: "uncommon",
     points: 40,
+  },
+  {
+    id: "senor_squat",
+    name: "Señor Squat",
+    description: "Complete 100 squats in total",
+    type: "exercise",
+    icon: "🦵",
+    criteria: {
+      type: "total_reps",
+      value: 100,
+      exerciseName: "Squat",
+    },
+    rarity: "uncommon",
+    points: 40,
+  },
+  {
+    id: "burpee_slurpee",
+    name: "Burpee Slurpee",
+    description: "Complete 75 burpees in total",
+    type: "exercise",
+    icon: "↕️",
+    criteria: {
+      type: "total_reps",
+      value: 75,
+      exerciseName: "Burpee",
+    },
+    rarity: "uncommon",
+    points: 40,
+  },
+  {
+    id: "situp_specialist",
+    name: "Sit-up Specialist",
+    description: "Complete 200 sit-ups in total",
+    type: "exercise",
+    icon: "🫃",
+    criteria: {
+      type: "total_reps",
+      value: 200,
+      exerciseName: "Situp",
+    },
+    rarity: "rare",
+    points: 55,
+  },
+  {
+    id: "arnolds_angels",
+    name: "Arnold's Angels",
+    description: "Complete 400 Arnold Press' in total",
+    type: "exercise",
+    icon: "🤷‍♂️",
+    criteria: {
+      type: "total_reps",
+      value: 400,
+      exerciseName: "Arnold Press",
+    },
+    rarity: "rare",
+    points: 55,
   },
 
   // Social Achievements

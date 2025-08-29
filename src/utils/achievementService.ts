@@ -13,13 +13,14 @@ export interface AchievementProgress {
 export interface UserStats {
   totalReps: number;
   totalSets: number;
-  exerciseCounts: { [exerciseId: number]: number };
+  exerciseCounts: { [exerciseName: string]: number };
   daysActive: number;
   perfectRolls: number;
   friendCount: number;
   currentStreak: number;
   longestStreak: number;
   maxStepsInDay: number;
+  maxSingleWorkoutReps: number;
 }
 
 export class AchievementService {
@@ -72,6 +73,7 @@ export class AchievementService {
       currentStreak: 0,
       longestStreak: 0,
       maxStepsInDay: 0,
+      maxSingleWorkoutReps: 0,
     };
 
     try {
@@ -100,8 +102,8 @@ export class AchievementService {
           stats.totalSets += 1;
 
           // Count by exercise type
-          stats.exerciseCounts[activity.exercise_id] =
-            (stats.exerciseCounts[activity.exercise_id] || 0) + activity.reps;
+          stats.exerciseCounts[activity.exercise_name] =
+            (stats.exerciseCounts[activity.exercise_name] || 0) + activity.reps;
 
           // Check for perfect rolls (6,6)
           if (
@@ -116,6 +118,20 @@ export class AchievementService {
         // Count unique days active
         const uniqueDays = new Set(activities.map((a) => new Date(a.timestamp).toDateString()));
         stats.daysActive = uniqueDays.size;
+
+        // Calculate maximum single workout reps
+        if (activities.length > 0) {
+          // Group activities by workout session (same timestamp) and sum reps per session
+          const sessionTotals = new Map<string, number>();
+
+          activities.forEach((activity) => {
+            const sessionKey = new Date(activity.timestamp).toISOString();
+            sessionTotals.set(sessionKey, (sessionTotals.get(sessionKey) || 0) + activity.reps);
+          });
+
+          // Find the maximum total reps from any single session
+          stats.maxSingleWorkoutReps = Math.max(...Array.from(sessionTotals.values()));
+        }
       }
 
       // Get friend count
@@ -157,8 +173,8 @@ export class AchievementService {
         return userStats.currentStreak >= criteria.value;
 
       case "total_reps":
-        if (criteria.exerciseId) {
-          return (userStats.exerciseCounts[criteria.exerciseId] || 0) >= criteria.value;
+        if (criteria.exerciseName) {
+          return (userStats.exerciseCounts[criteria.exerciseName] || 0) >= criteria.value;
         }
         return userStats.totalReps >= criteria.value;
 
@@ -313,8 +329,8 @@ export class AchievementService {
           currentValue = userStats.currentStreak;
           break;
         case "total_reps":
-          if (achievement.criteria.exerciseId) {
-            currentValue = userStats.exerciseCounts[achievement.criteria.exerciseId] || 0;
+          if (achievement.criteria.exerciseName) {
+            currentValue = userStats.exerciseCounts[achievement.criteria.exerciseName] || 0;
           } else {
             currentValue = userStats.totalReps;
           }
@@ -335,7 +351,7 @@ export class AchievementService {
           currentValue = userStats.perfectRolls;
           break;
         case "single_workout_reps":
-          currentValue = 0; // This is checked per workout
+          currentValue = userStats.maxSingleWorkoutReps;
           break;
       }
 
