@@ -324,6 +324,7 @@ class PushNotificationService {
         type: "high_five",
         friendName,
         activity, // Include activity information if provided
+        recipientUserId: userId, // Include the intended recipient's user ID
       },
     };
 

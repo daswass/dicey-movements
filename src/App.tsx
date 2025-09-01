@@ -193,35 +193,43 @@ function App() {
 
       // Handle high five notification
       if (event.data.type === "HIGH_FIVE_FROM_NOTIFICATION") {
-        setShowHighFiveEffect(true);
-        // Show internal notification with data from the notification
         const notificationData = event.data.notificationData;
-        if (notificationData?.friendName) {
-          // Use the activity from the notification if available, otherwise use generic text
-          const activity = notificationData.activity || "your activity";
-          addHighFiveNotification(notificationData.friendName, activity);
 
-          // If this is from a notification action (friend activity), send a high five TO the friend
-          if (notificationData.fromNotificationAction && notificationData.friendId) {
-            try {
-              const success = await sendHighFive(
-                notificationData.friendId,
-                notificationData.activity
-              );
-              if (success) {
-                console.log(
-                  "App.tsx: High five sent successfully to friend via notification action"
+        // Only show the high five effect if this notification is intended for the current user
+        if (session?.user?.id && notificationData?.recipientUserId === session.user.id) {
+          setShowHighFiveEffect(true);
+          // Show internal notification with data from the notification
+          if (notificationData?.friendName) {
+            // Use the activity from the notification if available, otherwise use generic text
+            const activity = notificationData.activity || "your activity";
+            addHighFiveNotification(notificationData.friendName, activity);
+
+            // If this is from a notification action (friend activity), send a high five TO the friend
+            if (notificationData.fromNotificationAction && notificationData.friendId) {
+              try {
+                const success = await sendHighFive(
+                  notificationData.friendId,
+                  notificationData.activity
                 );
-              } else {
-                console.warn("App.tsx: Failed to send high five to friend via notification action");
+                if (success) {
+                  console.log(
+                    "App.tsx: High five sent successfully to friend via notification action"
+                  );
+                } else {
+                  console.warn(
+                    "App.tsx: Failed to send high five to friend via notification action"
+                  );
+                }
+              } catch (error) {
+                console.error(
+                  "App.tsx: Error sending high five to friend via notification action:",
+                  error
+                );
               }
-            } catch (error) {
-              console.error(
-                "App.tsx: Error sending high five to friend via notification action:",
-                error
-              );
             }
           }
+        } else {
+          console.log("App.tsx: High five notification not intended for current user, ignoring");
         }
       }
 
@@ -245,6 +253,7 @@ function App() {
     resetNotificationFlags,
     timerComplete,
     currentWorkoutComplete,
+    session,
   ]);
 
   // Check for timer completion from URL parameter (new window case)

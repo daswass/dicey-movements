@@ -113,13 +113,17 @@ self.addEventListener("push", async (event) => {
     // Handle silent high five notifications (even if silent)
     if (notificationData.data && notificationData.data.type === "high_five") {
       // Send message to all clients to trigger high five effects
+      // Include the recipient user ID so clients can check if they should show the effect
       clients.matchAll({ type: "window" }).then((clientList) => {
         if (clientList.length === 0) {
           return clients.matchAll().then((allClients) => {
             allClients.forEach((client) => {
               client.postMessage({
                 type: "HIGH_FIVE_FROM_NOTIFICATION",
-                notificationData: notificationData.data,
+                notificationData: {
+                  ...notificationData.data,
+                  recipientUserId: notificationData.data.recipientUserId,
+                },
               });
             });
           });
@@ -127,7 +131,10 @@ self.addEventListener("push", async (event) => {
         clientList.forEach((client) => {
           client.postMessage({
             type: "HIGH_FIVE_FROM_NOTIFICATION",
-            notificationData: notificationData.data,
+            notificationData: {
+              ...notificationData.data,
+              recipientUserId: notificationData.data.recipientUserId,
+            },
           });
         });
       });
@@ -253,7 +260,10 @@ self.addEventListener("notificationclick", (event) => {
           } else if (isHighFiveNotification) {
             client.postMessage({
               type: "HIGH_FIVE_FROM_NOTIFICATION",
-              notificationData: event.notification.data,
+              notificationData: {
+                ...event.notification.data,
+                recipientUserId: event.notification.data.recipientUserId,
+              },
             });
           } else {
             // For non-timer notifications (friend activity, etc.), just focus without special handling
