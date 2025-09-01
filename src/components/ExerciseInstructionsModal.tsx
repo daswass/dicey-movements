@@ -423,6 +423,131 @@ const ExerciseInstructionsModal: React.FC<ExerciseInstructionsModalProps> = ({
       ],
       muscles: ["Deltoids", "Triceps", "Upper Chest", "Core"],
     },
+    "Belly Breath": {
+      description:
+        "A foundational breathing exercise that promotes relaxation and mindfulness through deep diaphragmatic breathing.",
+      steps: [
+        "Sit or lie down in a comfortable position",
+        "Place one hand on your chest and the other on your belly",
+        "Breathe in slowly through your nose, feeling your belly rise",
+        "Keep your chest relatively still while your belly expands",
+        "Exhale slowly through your mouth or nose, feeling your belly fall",
+        "Continue this deep, slow breathing pattern",
+      ],
+      tips: [
+        "Focus on the rise and fall of your belly, not your chest",
+        "Breathe at a comfortable pace - don't force it",
+        "If your mind wanders, gently return focus to your breath",
+        "Practice for 2-5 minutes or as long as feels comfortable",
+        "This exercise can be done anywhere, anytime",
+      ],
+      muscles: ["Diaphragm", "Core", "Mindfulness"],
+    },
+    "Sun Salutation": {
+      description:
+        "A flowing sequence of movements combined with breath awareness, promoting flexibility and mindfulness.",
+      steps: [
+        "Stand tall with feet together, hands in prayer position at heart center",
+        "Inhale and raise your arms overhead, arching slightly backward",
+        "Exhale and fold forward, bringing your hands toward the ground",
+        "Inhale and step one foot back into a lunge position",
+        "Exhale and step the other foot back into a plank position",
+        "Lower to the ground and inhale into an upward dog position",
+        "Exhale and lift your hips into downward dog position",
+        "Hold for a few breaths, then reverse the sequence",
+      ],
+      tips: [
+        "Move slowly and mindfully with your breath",
+        "Don't worry about perfect form - focus on the flow",
+        "Modify poses as needed for your body",
+        "Feel the stretch and movement in each position",
+        "This can be done as a single sequence or repeated",
+      ],
+      muscles: ["Full Body", "Flexibility", "Core", "Mindfulness"],
+    },
+    "Box Breath": {
+      description:
+        "A structured breathing technique that uses equal counts for inhale, hold, exhale, and hold phases.",
+      steps: [
+        "Sit comfortably with your spine straight",
+        "Inhale slowly through your nose for a count of 4",
+        "Hold your breath for a count of 4",
+        "Exhale slowly through your nose for a count of 4",
+        "Hold your breath out for a count of 4",
+        "Repeat this 4-4-4-4 breathing pattern",
+      ],
+      tips: [
+        "Start with shorter counts if 4 feels too long",
+        "Keep the counts equal for all four phases",
+        "Focus on the counting to help quiet your mind",
+        "This technique is great for stress relief and focus",
+        "Practice for 3-5 minutes or as needed",
+      ],
+      muscles: ["Diaphragm", "Core", "Mindfulness", "Focus"],
+    },
+    "Grateful Breath": {
+      description:
+        "A mindfulness practice that combines breathing with gratitude, promoting positive emotions and well-being.",
+      steps: [
+        "Sit comfortably and close your eyes",
+        "Take a few deep breaths to center yourself",
+        "As you inhale, think of something you're grateful for",
+        "As you exhale, feel the gratitude filling your body",
+        "Continue breathing while focusing on different things you appreciate",
+        "Allow feelings of thankfulness to grow with each breath",
+      ],
+      tips: [
+        "Start with simple things like your breath or a comfortable seat",
+        "Let gratitude flow naturally - don't force it",
+        "Notice how gratitude feels in your body",
+        "This practice can shift your mood and perspective",
+        "Even small things count - a warm cup of tea, a kind word",
+      ],
+      muscles: ["Diaphragm", "Core", "Mindfulness", "Emotional Well-being"],
+    },
+    "Smiling Seconds": {
+      description:
+        "A simple mindfulness practice that uses a gentle smile to promote positive emotions and relaxation.",
+      steps: [
+        "Sit or stand comfortably",
+        "Take a deep breath in",
+        "As you exhale, allow a gentle, natural smile to form on your face",
+        "Hold the smile for a few seconds while breathing normally",
+        "Notice how the smile feels and any emotions it brings up",
+        "Let the smile fade naturally, then repeat if desired",
+      ],
+      tips: [
+        "Don't force a big smile - a gentle, natural one works best",
+        "Even a slight upturn of the corners of your mouth can help",
+        "Notice how smiling affects your mood and body",
+        "This can be done anywhere, even during stressful moments",
+        "The smile doesn't have to be about anything specific",
+      ],
+      muscles: ["Facial Muscles", "Mindfulness", "Emotional Well-being"],
+    },
+    "Alternate Nostril Breath": {
+      description:
+        "A traditional breathing technique that balances the nervous system and promotes mental clarity.",
+      steps: [
+        "Sit comfortably with your spine straight",
+        "Use your right thumb to close your right nostril",
+        "Inhale slowly through your left nostril",
+        "Close your left nostril with your ring finger, release your thumb",
+        "Exhale slowly through your right nostril",
+        "Inhale through your right nostril",
+        "Close your right nostril, release your ring finger",
+        "Exhale through your left nostril",
+        "Continue alternating for several rounds",
+      ],
+      tips: [
+        "Keep your breathing slow and controlled",
+        "Don't force the breath - let it flow naturally",
+        "This technique can help balance energy and calm the mind",
+        "If you feel dizzy, return to normal breathing",
+        "Practice for 3-5 minutes or as comfortable",
+      ],
+      muscles: ["Diaphragm", "Core", "Mindfulness", "Nervous System Balance"],
+    },
   };
 
   const instructions = exerciseInstructions[exercise.name] || {

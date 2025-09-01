@@ -1,16 +1,15 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { getExerciseById } from "../data/exercises";
-import { DiceRoll, ExerciseMultipliers, WorkoutSession, Split } from "../types";
-import Dice from "./Dice"; // 1. Import the Dice component
-import { notificationService } from "../utils/notificationService";
+import { DiceRoll, ExerciseMultipliers, Split, WorkoutSession } from "../types";
+import Dice from "./Dice";
 
 interface DiceRollerProps {
   onRollComplete: (session: WorkoutSession) => void;
   multipliers: ExerciseMultipliers;
   rollCompleted: boolean;
   session?: WorkoutSession | null;
-  autoRoll?: boolean; // New prop for auto-rolling
-  selectedSplit: Split; // The currently selected split
+  autoRoll?: boolean;
+  selectedSplit: Split;
 }
 
 const DiceRoller: React.FC<DiceRollerProps> = ({
@@ -21,7 +20,6 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
   autoRoll = false,
   selectedSplit,
 }) => {
-  console.log("DiceRoller: Received selectedSplit prop:", selectedSplit);
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [diceValues, setDiceValues] = useState<DiceRoll | null>(null);
 
@@ -51,17 +49,11 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         const finalRepsDie = Math.floor(Math.random() * 6) + 1;
         setDiceValues({ exerciseDie: finalExerciseDie, repsDie: finalRepsDie });
         setIsRolling(false);
-        console.log(
-          "DiceRoller: Rolling for split:",
-          selectedSplit.id,
-          "with name:",
-          selectedSplit.name
-        );
-        console.log("DiceRoller: Exercise die value:", finalExerciseDie);
+
         const exercise = getExerciseById(finalExerciseDie, selectedSplit.id);
-        console.log("DiceRoller: Got exercise:", exercise);
         const exerciseMultiplier = multipliers[finalExerciseDie];
         const totalReps = finalRepsDie * exerciseMultiplier;
+
         const session: WorkoutSession = {
           id: crypto.randomUUID(),
           timestamp: Date.now(),
@@ -70,7 +62,7 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
           reps: totalReps,
           multiplier: exerciseMultiplier,
         };
-        console.log("DiceRoller: Created session:", session);
+
         onRollComplete(session);
       }
     }, interval);
@@ -87,7 +79,6 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
     <div className="flex flex-col items-center">
       <div className="flex justify-center space-x-8 mb-8">
         <div className="flex flex-col items-center">
-          {/* 2. Replace the text number with the Dice component */}
           <Dice
             value={diceValues?.exerciseDie}
             className={`w-24 h-24 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg mb-2 ${
@@ -98,7 +89,6 @@ const DiceRoller: React.FC<DiceRollerProps> = ({
         </div>
 
         <div className="flex flex-col items-center">
-          {/* 3. Do the same for the Reps die */}
           <Dice
             value={diceValues?.repsDie}
             className={`w-24 h-24 rounded-lg bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg mb-2 ${

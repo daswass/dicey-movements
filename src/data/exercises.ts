@@ -25,6 +25,12 @@ export const exerciseEmojis: Record<string, string> = {
   "Dumbbell Curl": "💪",
   "Dumbbell Kickback": "🔩",
   "Leg Raise": "🦵",
+  "Belly Breath": "🫁",
+  "Sun Salutation": "☀️",
+  "Box Breath": "📦",
+  "Grateful Breath": "🙏",
+  "Smiling Seconds": "😊",
+  "Alternate Nostril Breath": "👃",
 };
 
 // Helper function to get emoji for an exercise
@@ -95,7 +101,7 @@ export const splits: Split[] = [
     id: "arms-and-abs",
     name: "Arms and Abs",
     description: "Focus on arms and abs",
-    emoji: "💪",
+    emoji: "💪➕🛡️",
     exercises: [
       { id: 1, name: "Pushup", splitId: "arms-and-abs" },
       { id: 2, name: "Situp", splitId: "arms-and-abs" },
@@ -103,6 +109,20 @@ export const splits: Split[] = [
       { id: 4, name: "Dumbbell Curl", splitId: "arms-and-abs" },
       { id: 5, name: "Dumbbell Kickback", splitId: "arms-and-abs" },
       { id: 6, name: "Leg Raise", splitId: "arms-and-abs" },
+    ],
+  },
+  {
+    id: "mindfulness",
+    name: "Mindfulness",
+    description: "Focus on being present and mindful",
+    emoji: "🧘‍♂️",
+    exercises: [
+      { id: 1, name: "Belly Breath", splitId: "mindfulness" },
+      { id: 2, name: "Sun Salutation", splitId: "mindfulness" },
+      { id: 3, name: "Box Breath", splitId: "mindfulness" },
+      { id: 4, name: "Grateful Breath", splitId: "mindfulness" },
+      { id: 5, name: "Smiling Seconds", splitId: "mindfulness" },
+      { id: 6, name: "Alternate Nostril Breath", splitId: "mindfulness" },
     ],
   },
 ];
@@ -129,11 +149,9 @@ export const getExercisesBySplitId = (splitId: string): Exercise[] => {
 
 // Get exercise by ID within a specific split
 export const getExerciseById = (id: number, splitId: string): Exercise => {
-  console.log("getExerciseById: Looking for exercise ID", id, "in split", splitId);
   const exercises = getExercisesBySplitId(splitId);
-  console.log("getExerciseById: Found exercises for split:", exercises);
   const exercise = exercises.find((ex) => ex.id === id);
-  console.log("getExerciseById: Found exercise:", exercise);
+
   if (!exercise) {
     throw new Error(`Exercise with id ${id} not found in split ${splitId}`);
   }
