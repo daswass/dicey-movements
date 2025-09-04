@@ -249,13 +249,27 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
       setIsCompletingWorkout(true);
 
+      // Show modal and set up optimistic timer restart
+      setShowThatsLikeYouModal(true);
+
+      // Optimistically restart timer after modal timeout, regardless of backend sync
+      setTimeout(() => {
+        setShowThatsLikeYouModal(false);
+
+        // Reset all timer and workout states optimistically
+        setCurrentWorkoutComplete(false);
+        setTimerComplete(false);
+        // Clear notification flags for new timer session
+        sessionStorage.removeItem("openedFromNotification");
+        resetNotificationFlags();
+        onStartTimer();
+        setLatestSession(null);
+        setIsRollAndStartMode(false); // Reset roll and start mode
+
+        console.log("Dashboard: Optimistically restarted timer after workout complete");
+      }, 2000);
+
       try {
-        setShowThatsLikeYouModal(true);
-
-        setTimeout(() => {
-          setShowThatsLikeYouModal(false);
-        }, 2000);
-
         if (!latestSession || !user) return;
 
         // Clear timer notifications when completing exercise
@@ -346,15 +360,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         // Always reset the loading state
         setIsCompletingWorkout(false);
       }
-
-      setCurrentWorkoutComplete(false);
-      setTimerComplete(false);
-      // Clear notification flags for new timer session
-      sessionStorage.removeItem("openedFromNotification");
-      resetNotificationFlags();
-      onStartTimer();
-      setLatestSession(null);
-      setIsRollAndStartMode(false); // Reset roll and start mode
     }, [
       latestSession,
       user?.id,
