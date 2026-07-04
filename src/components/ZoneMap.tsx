@@ -325,7 +325,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
               <p className="text-gray-300 font-medium">{userZone.displayName}</p>
               {(() => {
                 const captain = captainMap.get(userZone.id);
-                if (captain?.captainUserId === userProfile?.id) {
+                if (captain && captain.captainUserId === userProfile?.id) {
                   return (
                     <p className="text-yellow-400 mt-2 flex items-center gap-1">
                       <Crown size={16} /> You're the Zone Sheister! ({captain.totalReps} reps)
