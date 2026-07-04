@@ -1,9 +1,11 @@
+import { lazy, Suspense } from "react";
 import { Exercise } from "../types";
 import { UserProfile } from "../types/social";
 import { AchievementNotification } from "./AchievementNotification";
-import ExerciseInstructionsModal from "./ExerciseInstructionsModal";
 import SettingsPanel from "./SettingsPanel";
 import { WorkoutCompleteHeistInfo, WorkoutCompleteModal } from "./WorkoutCompleteModal";
+
+const ExerciseInstructionsModal = lazy(() => import("./ExerciseInstructionsModal"));
 
 interface DashboardModalsProps {
   showSettings: boolean;
@@ -105,11 +107,15 @@ export default function DashboardModals({
         </div>
       )}
 
-      <ExerciseInstructionsModal
-        exercise={selectedExercise}
-        isOpen={showExerciseModal}
-        onClose={onCloseExerciseModal}
-      />
+      {showExerciseModal && (
+        <Suspense fallback={null}>
+          <ExerciseInstructionsModal
+            exercise={selectedExercise}
+            isOpen={showExerciseModal}
+            onClose={onCloseExerciseModal}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

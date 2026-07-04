@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { getSplitById, getDefaultSplit } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession, Split, Exercise } from "../types";
 import { UserProfile } from "../types/social";
@@ -11,11 +11,14 @@ import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient";
 import DashboardModals from "./DashboardModals";
 import DashboardStatsPanel from "./DashboardStatsPanel";
-import { Achievements } from "./Achievements";
 import History from "./History";
 import SocialFeatures from "./SocialFeatures";
 import WorkoutFlow from "./WorkoutFlow";
 import { WorkoutCompleteHeistInfo } from "./WorkoutCompleteModal";
+
+const Achievements = lazy(() =>
+  import("./Achievements").then((module) => ({ default: module.Achievements }))
+);
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -335,7 +338,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               onWorkoutComplete={handleWorkoutComplete}
             />
             <History history={sessionHistory as any[]} selectedSplit={selectedSplit} />
-            {showAchievements && <Achievements userProfile={userProfile} />}
+            {showAchievements && (
+              <Suspense
+                fallback={
+                  <div className="text-center py-4 text-gray-400 text-sm">Loading achievements...</div>
+                }>
+                <Achievements userProfile={userProfile} />
+              </Suspense>
+            )}
           </div>
 
           <div className="col-span-1 space-y-6">
