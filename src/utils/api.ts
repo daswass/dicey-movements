@@ -1,4 +1,4 @@
-import { supabase } from "./supabaseClient";
+import { getAccessToken } from "./authSession";
 
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
@@ -6,16 +6,14 @@ const BACKEND_URL =
   "https://dicey-movements-backend.onrender.com";
 
 async function getAuthHeaders(): Promise<HeadersInit> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const accessToken = await getAccessToken();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
-  if (session?.access_token) {
-    headers.Authorization = `Bearer ${session.access_token}`;
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
   }
 
   return headers;

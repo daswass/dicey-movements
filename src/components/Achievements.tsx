@@ -2,7 +2,6 @@ import { Crown, Star, Target, Trophy, Zap } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { AchievementDefinition, achievements } from "../data/achievements";
 import { AchievementProgress, AchievementService } from "../utils/achievementService";
-import { supabase } from "../utils/supabaseClient";
 
 interface AchievementsProps {
   userProfile?: any;
@@ -40,12 +39,10 @@ export const Achievements: React.FC<AchievementsProps> = ({ userProfile }) => {
   const loadAchievements = async () => {
     try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = userProfile?.id;
+      if (!userId) return;
 
-      const progress = await AchievementService.getAchievementProgress(user.id);
+      const progress = await AchievementService.getAchievementProgress(userId);
       console.log("Achievement progress loaded:", progress);
       console.log(
         "Completed achievements:",

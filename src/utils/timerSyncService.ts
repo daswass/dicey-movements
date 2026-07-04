@@ -1,3 +1,4 @@
+import { getAuthUserId } from "./authSession";
 import { createSupabaseChannel, SupabaseChannelManager } from "./supabaseChannel";
 import { supabase } from "./supabaseClient";
 
@@ -68,10 +69,8 @@ class TimerSyncService {
   // Start timer sync (become master)
   async startTimerSync(duration: number): Promise<boolean> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return false;
+      const userId = getAuthUserId();
+      if (!userId) return false;
 
       const now = new Date().toISOString();
 
@@ -83,7 +82,7 @@ class TimerSyncService {
           timer_duration: duration, // Use existing timer_duration field
           timer_last_updated: now,
         })
-        .eq("id", user.id);
+        .eq("id", userId);
 
       if (error) {
         console.error("TimerSyncService: Error starting timer sync:", error);
@@ -101,10 +100,8 @@ class TimerSyncService {
 
   async stopTimerSync(): Promise<boolean> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return false;
+      const userId = getAuthUserId();
+      if (!userId) return false;
 
       const { error } = await supabase
         .from("profiles")
@@ -112,7 +109,7 @@ class TimerSyncService {
           timer_master_device_id: null,
           timer_last_updated: new Date().toISOString(),
         })
-        .eq("id", user.id);
+        .eq("id", userId);
 
       if (error) {
         console.error("TimerSyncService: Error stopping timer sync:", error);
@@ -131,10 +128,8 @@ class TimerSyncService {
   // Clear synced timer session so a reset does not resume from elapsed DB time.
   async resetTimerSync(): Promise<boolean> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return false;
+      const userId = getAuthUserId();
+      if (!userId) return false;
 
       const now = new Date().toISOString();
       const { error } = await supabase
@@ -144,7 +139,7 @@ class TimerSyncService {
           timer_start_time: null,
           timer_last_updated: now,
         })
-        .eq("id", user.id);
+        .eq("id", userId);
 
       if (error) {
         console.error("TimerSyncService: Error resetting timer sync:", error);
@@ -167,10 +162,8 @@ class TimerSyncService {
         return true;
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return false;
+      const userId = getAuthUserId();
+      if (!userId) return false;
 
       // First, get current timer state to see if we need to set start time
       const currentState = await this.getTimerState();
@@ -185,7 +178,7 @@ class TimerSyncService {
         updateData.timer_start_time = now;
       }
 
-      const { error } = await supabase.from("profiles").update(updateData).eq("id", user.id);
+      const { error } = await supabase.from("profiles").update(updateData).eq("id", userId);
 
       if (error) {
         console.error("TimerSyncService: Error becoming master:", error);
@@ -204,15 +197,13 @@ class TimerSyncService {
 
   async getTimerState(): Promise<TimerState | null> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
+      const userId = getAuthUserId();
+      if (!userId) return null;
 
       const { data, error } = await supabase
         .from("profiles")
         .select("timer_master_device_id, timer_start_time, timer_duration, timer_last_updated")
-        .eq("id", user.id)
+        .eq("id", userId)
         .single();
 
       if (error) {
@@ -281,10 +272,8 @@ class TimerSyncService {
     }
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = getAuthUserId();
+      if (!userId) return;
 
       this.channelManager.subscribe(
         "postgres_changes",
@@ -292,7 +281,7 @@ class TimerSyncService {
           event: "UPDATE",
           schema: "public",
           table: "profiles",
-          filter: `id=eq.${user.id}`,
+          filter: `id=eq.${userId}`,
         },
         (payload) => {
           const newData = payload.new as any;

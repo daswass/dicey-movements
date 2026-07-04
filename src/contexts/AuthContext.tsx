@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { UserProfile } from "../types/social";
+import { syncAuthSession } from "../utils/authSession";
 import { getUserLocation, updateUserLocation } from "../utils/socialService";
 import { supabase } from "../utils/supabaseClient";
 
@@ -87,6 +88,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession);
+      syncAuthSession(
+        initialSession?.user?.id ?? null,
+        initialSession?.access_token ?? null
+      );
       if (initialSession?.user) {
         fetchUserProfile(initialSession.user.id, initialSession);
       } else {
@@ -98,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      syncAuthSession(nextSession?.user?.id ?? null, nextSession?.access_token ?? null);
       if (nextSession?.user) {
         if (lastFetchedUserIdRef.current !== nextSession.user.id) {
           fetchUserProfile(nextSession.user.id, nextSession);

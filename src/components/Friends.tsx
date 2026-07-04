@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient";
 
 // Clarify Friend interface properties to indicate who initiated
@@ -49,6 +50,8 @@ interface RawFriendRecord {
 export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   onFriendRequestUpdate,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]); // Accepted friends
@@ -61,10 +64,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   // Fetch all friend relationships related to the current user
   const fetchFriends = useCallback(async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
       const { data, error } = await supabase
         .from("friends")
@@ -79,7 +79,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
           receiver_profile:profiles!friend_id (first_name, last_name, username)
           `
         ) // Ensure absolutely NOTHING else is inside these backticks
-        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+        .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
       if (error) throw error;
 
@@ -91,7 +91,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
       const sentToMe: Friend[] = [];
 
       typedFriendRecords?.forEach((record) => {
-        const isOutgoing = record.user_id === user.id; // True if I initiated the request
+        const isOutgoing = record.user_id === userId; // True if I initiated the request
         // Determine which profile is the 'other' user in this record
         // Handle the case where profiles might be arrays from Supabase
         const initiatorProfile = Array.isArray(record.initiator_profile)
@@ -128,7 +128,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
       const uniqueAcceptedFriends: Friend[] = [];
 
       acceptedRaw.forEach((friend) => {
-        const currentUserId = user.id;
+        const currentUserId = userId;
         // Get the ID of the actual friend (the *other* user in this specific record)
         const friendIdInRecord =
           friend.user_id === currentUserId ? friend.friend_id : friend.user_id;
@@ -151,47 +151,43 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
       console.error("Error fetching friends:", err);
       setError("Failed to load friends");
     }
-  }, []); // useCallback memoizes this function; it only re-creates if its dependencies change.
+  }, [userId]);
 
   // Search for users
   const searchUsers = useCallback(
     async (term: string) => {
       if (!term.trim()) {
         setSearchResults([]);
-        setLoading(false); // Ensure loading is off if term is empty
+        setLoading(false);
+        return;
+      }
+
+      if (!userId) {
+        setLoading(false);
         return;
       }
 
       setLoading(true);
 
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          setLoading(false); // Ensure loading is off if no user
-          return;
-        }
-
         const { data, error } = await supabase
           .from("profiles")
           .select("id, first_name, last_name, username")
           .or(
-            `first_name.ilike.%<span class="math-inline">\{term\}%,last\_name\.ilike\.%</span>{term}%,username.ilike.%${term}%`
+            `first_name.ilike.%${term}%,last_name.ilike.%${term}%,username.ilike.%${term}%`
           )
-          .neq("id", user.id); // Exclude current user from search results
+          .neq("id", userId);
 
         if (error) throw error;
 
-        // Combine all relationships for efficient lookup
         const allRelationships = [...friends, ...pendingFriends, ...incomingRequests];
 
         const processedResults =
           data?.map((searchUser) => {
             const relationship = allRelationships.find(
               (rel) =>
-                (rel.user_id === user.id && rel.friend_id === searchUser.id) || // I sent
-                (rel.user_id === searchUser.id && rel.friend_id === user.id) // They sent
+                (rel.user_id === userId && rel.friend_id === searchUser.id) ||
+                (rel.user_id === searchUser.id && rel.friend_id === userId)
             );
 
             let status: User["relationshipStatus"] = "none";
@@ -201,20 +197,17 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
               if (relationship.status === "accepted") {
                 status = "friend";
               } else if (relationship.status === "pending") {
-                if (relationship.user_id === user.id) {
-                  // I sent them a request
+                if (relationship.user_id === userId) {
                   status = "pending_outgoing";
-                } else if (relationship.friend_id === user.id) {
-                  // They sent me a request
+                } else if (relationship.friend_id === userId) {
                   status = "pending_incoming";
-                  friendshipRecordId = relationship.id; // Store the record ID for accepting
+                  friendshipRecordId = relationship.id;
                 }
               }
             }
             return { ...searchUser, relationshipStatus: status, friendshipRecordId };
           }) || [];
 
-        // Filter: Show only users with no existing relationship OR users who sent a pending request TO ME (to allow accepting)
         const filteredResults = processedResults.filter(
           (u) => u.relationshipStatus === "none" || u.relationshipStatus === "pending_incoming"
         );
@@ -227,19 +220,15 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
         setLoading(false);
       }
     },
-    [friends, pendingFriends, incomingRequests]
-  ); // Depend on relationship lists for filtering
+    [friends, pendingFriends, incomingRequests, userId]
+  );
 
-  // Send friend request
   const sendFriendRequest = async (friendId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
       const { error } = await supabase.from("friends").insert({
-        user_id: user.id,
+        user_id: userId,
         friend_id: friendId,
         status: "pending",
       });
@@ -261,15 +250,11 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   // Accept incoming friend request
   const acceptFriendRequest = async (requestId: string, requesterUserId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
-      // Start a transaction to ensure atomicity
       const { error: rpcError } = await supabase.rpc("accept_friend_request_transaction", {
         friendship_record_id: requestId,
-        current_user_id: user.id,
+        current_user_id: userId,
         requester_id: requesterUserId,
       });
 
@@ -290,12 +275,9 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   // Reject incoming friend request (delete the record)
   const rejectFriendRequest = async (requestId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
-      const { error } = await supabase.from("friends").delete().eq("id", requestId); // Delete the specific incoming request record
+      const { error } = await supabase.from("friends").delete().eq("id", requestId);
 
       if (error) throw error;
       await fetchFriends(); // Re-fetch all friend lists
@@ -312,16 +294,13 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   // Cancel outgoing friend request (delete the record)
   const cancelFriendRequest = async (requestId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
       const { error } = await supabase
         .from("friends")
         .delete()
-        .eq("id", requestId) // Delete the specific outgoing request record
-        .eq("user_id", user.id) // Ensure current user initiated it
+        .eq("id", requestId)
+        .eq("user_id", userId)
         .eq("status", "pending"); // Ensure it's a pending request
 
       if (error) throw error;
@@ -336,17 +315,13 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   // Remove an accepted friend (delete both reciprocal records)
   const removeFriend = async (friendId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
-      // Delete both reciprocal friend records (initiated by me or initiated by friend)
       const { error } = await supabase
         .from("friends")
         .delete()
         .or(
-          `and(user_id.eq.<span class="math-inline">\{user\.id\},friend\_id\.eq\.</span>{friendId}),and(user_id.eq.<span class="math-inline">\{friendId\},friend\_id\.eq\.</span>{user.id})`
+          `and(user_id.eq.${userId},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${userId})`
         );
 
       if (error) throw error;

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { getExerciseEmoji } from "../data/exercises";
+import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../utils/supabaseClient";
 
 interface Activity {
@@ -15,31 +16,30 @@ interface Activity {
 }
 
 export const FriendActivity: React.FC = () => {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOwnActivity, setShowOwnActivity] = useState(true);
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("week");
 
-  const fetchActivities = async () => {
+  const fetchActivities = useCallback(async () => {
     try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) return;
 
       const { data: friendsData, error: friendsError } = await supabase
         .from("friends")
         .select("friend_id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("status", "accepted");
 
       if (friendsError) throw friendsError;
 
       const friendIds = friendsData.map((f) => f.friend_id);
       if (showOwnActivity) {
-        friendIds.push(user.id);
+        friendIds.push(userId);
       }
 
       if (friendIds.length === 0) {
@@ -88,11 +88,11 @@ export const FriendActivity: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId, showOwnActivity, timeRange]);
 
   useEffect(() => {
     fetchActivities();
-  }, [showOwnActivity, timeRange]);
+  }, [fetchActivities]);
 
   return (
     <div className="max-w-4xl mx-auto p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">

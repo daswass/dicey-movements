@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { getAuthUserId, requireAuthUserId } from "./authSession";
 import { supabase } from "./supabaseClient";
 
 export const getUserLocation = async (options?: {
@@ -85,16 +86,13 @@ export const getUserLocation = async (options?: {
 };
 
 export const updateUserLocation = async (): Promise<import("../types/social").UserProfile> => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const userId = await requireAuthUserId();
 
   const location = await getUserLocation();
   const { data, error } = await supabase
     .from("profiles")
     .update({ location })
-    .eq("id", user.id)
+    .eq("id", userId)
     .select()
     .single();
 
@@ -104,15 +102,13 @@ export const updateUserLocation = async (): Promise<import("../types/social").Us
 
 export const fetchPendingFriendRequests = async (): Promise<number> => {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return 0;
+    const userId = getAuthUserId();
+    if (!userId) return 0;
 
     const { data, error } = await supabase
       .from("friends")
       .select("id")
-      .eq("friend_id", user.id)
+      .eq("friend_id", userId)
       .eq("status", "pending");
 
     if (error) {
@@ -129,10 +125,8 @@ export const fetchPendingFriendRequests = async (): Promise<number> => {
 
 export const sendHighFive = async (toUserId: string, activity?: string): Promise<boolean> => {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const userId = getAuthUserId();
+    if (!userId) {
       console.error("sendHighFive: User not authenticated");
       return false;
     }
@@ -140,7 +134,7 @@ export const sendHighFive = async (toUserId: string, activity?: string): Promise
     const response = await api.fetch("/api/high-five/send", {
       method: "POST",
       body: JSON.stringify({
-        fromUserId: user.id,
+        fromUserId: userId,
         toUserId,
         activity,
       }),

@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { supabase } from "./supabaseClient";
+import { getAuthUserId } from "./authSession";
 
 // Notification Service for Desktop and Safari Push Notifications
 export interface NotificationPermission {
@@ -337,18 +337,16 @@ class NotificationService {
     );
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
+      const userId = getAuthUserId();
+      if (userId) {
         console.log(
           "NotificationService: User found, sending push notification for user:",
-          user.id
+          userId
         );
         await api.fetch("/api/push/send", {
           method: "POST",
           body: JSON.stringify({
-            userId: user.id,
+            userId,
             payload: {
               type: "timer_expired",
               title: "⏰ Timer Expired!",
@@ -571,14 +569,12 @@ class NotificationService {
       // First, clear local notifications immediately
       await this.clearNotifications(tag);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
+      const userId = getAuthUserId();
+      if (userId) {
         await api.fetch("/api/push/send", {
           method: "POST",
           body: JSON.stringify({
-            userId: user.id,
+            userId,
             payload: {
               type: "clear_notifications",
               title: "", // Empty title for silent notification
@@ -602,15 +598,13 @@ class NotificationService {
 
   private async saveSubscriptionToBackend(subscription: PushSubscription): Promise<void> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+      const userId = getAuthUserId();
+      if (!userId) {
         console.warn("NotificationService: No authenticated user found");
         return;
       }
 
-      await api.subscribeToPush(user.id, subscription);
+      await api.subscribeToPush(userId, subscription);
     } catch (error) {
       console.error("NotificationService: Error saving subscription to backend:", error);
     }
@@ -618,15 +612,13 @@ class NotificationService {
 
   private async removeSubscriptionFromBackend(endpoint: string): Promise<void> {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+      const userId = getAuthUserId();
+      if (!userId) {
         console.warn("NotificationService: No authenticated user found");
         return;
       }
 
-      await api.unsubscribeFromPush(user.id, endpoint);
+      await api.unsubscribeFromPush(userId, endpoint);
       console.log("NotificationService: Subscription removed from backend");
     } catch (error) {
       console.error("NotificationService: Error removing subscription from backend:", error);
@@ -641,16 +633,14 @@ class NotificationService {
     }
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+      const userId = getAuthUserId();
+      if (!userId) {
         console.warn("NotificationService: No authenticated user found");
         return;
       }
 
       // Call backend to update activity
-      await api.updateSubscriptionActivity(user.id, this.deviceId);
+      await api.updateSubscriptionActivity(userId, this.deviceId);
       console.log("NotificationService: Subscription activity updated");
     } catch (error) {
       console.error("NotificationService: Error updating subscription activity:", error);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../utils/supabaseClient";
+import { useAuth } from "../contexts/AuthContext";
 import { OuraService, type OuraStatus } from "../utils/ouraService";
 import NotificationPermission from "./NotificationPermission";
 import NotificationSettings from "./NotificationSettings";
@@ -24,8 +24,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose,
   onUserProfileUpdate,
 }) => {
+  const { user } = useAuth();
   const [timerValue, setTimerValue] = useState<number>(timerDuration);
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -33,25 +33,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [syncMessage, setSyncMessage] = useState("");
 
   useEffect(() => {
-    const getCurrentUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setCurrentUser(user);
-    };
-    getCurrentUser();
-  }, []);
-
-  // Load Oura status when component mounts
-  useEffect(() => {
-    if (currentUser?.id) {
+    if (user?.id) {
       loadOuraStatus();
     }
-  }, [currentUser?.id]);
+  }, [user?.id]);
 
   const loadOuraStatus = async () => {
+    if (!user?.id) return;
     try {
-      const status = await OuraService.getStatus(currentUser.id);
+      const status = await OuraService.getStatus(user.id);
       setOuraStatus(status);
     } catch (error) {
       console.error("Error loading Oura status:", error);
@@ -60,7 +50,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleConnectOura = async () => {
-    if (!currentUser?.id) return;
+    if (!user?.id) return;
 
     setIsConnecting(true);
     try {
@@ -75,11 +65,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleDisconnectOura = async () => {
-    if (!currentUser?.id) return;
+    if (!user?.id) return;
 
     setIsDisconnecting(true);
     try {
-      await OuraService.disconnect(currentUser.id);
+      await OuraService.disconnect(user.id);
       await loadOuraStatus();
     } catch (error) {
       console.error("Error disconnecting Oura:", error);
@@ -90,12 +80,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleSyncOura = async () => {
-    if (!currentUser?.id) return;
+    if (!user?.id) return;
 
     setIsSyncing(true);
     setSyncMessage("Syncing activity data...");
     try {
-      await OuraService.syncActivity(currentUser.id, 7);
+      await OuraService.syncActivity(user.id, 7);
       setSyncMessage("Activity data synced successfully!");
       setTimeout(() => setSyncMessage(""), 3000);
     } catch (error) {
