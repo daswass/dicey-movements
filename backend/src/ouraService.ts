@@ -21,15 +21,6 @@ const OURA_WEBHOOK_URL = process.env.OURA_WEBHOOK_URL || "http://localhost:3000/
 const OURA_WEBHOOK_VERIFICATION_TOKEN =
   process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
 
-// Debug logging
-console.log("🔍 Environment Variables Debug:");
-console.log("OURA_CLIENT_ID:", OURA_CLIENT_ID);
-console.log("OURA_CLIENT_SECRET:", OURA_CLIENT_SECRET ? "***SET***" : "NOT SET");
-console.log("OURA_REDIRECT_URI:", OURA_REDIRECT_URI);
-console.log("OURA_WEBHOOK_URL:", OURA_WEBHOOK_URL);
-console.log("SUPABASE_URL:", supabaseUrl);
-console.log("SUPABASE_KEY:", supabaseKey ? "***SET***" : "NOT SET");
-
 interface OuraTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -52,7 +43,6 @@ interface OuraActivityData {
 export class OuraService {
   // Generate OAuth authorization URL
   static getAuthorizationUrl(state: string): string {
-    console.log("🔗 Generating auth URL with client_id:", OURA_CLIENT_ID);
     const params = new URLSearchParams({
       client_id: OURA_CLIENT_ID,
       redirect_uri: OURA_REDIRECT_URI,
@@ -72,13 +62,6 @@ export class OuraService {
         code: code,
         client_id: OURA_CLIENT_ID,
         client_secret: OURA_CLIENT_SECRET,
-        redirect_uri: OURA_REDIRECT_URI,
-      });
-
-      console.log("🔄 Exchanging code for token with params:", {
-        grant_type: "authorization_code",
-        code: "***REDACTED***",
-        client_id: OURA_CLIENT_ID,
         redirect_uri: OURA_REDIRECT_URI,
       });
 
