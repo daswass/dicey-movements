@@ -156,6 +156,18 @@ function RecenterButton({ center }: { center: [number, number] }) {
   );
 }
 
+function FlyToZone({ center }: { center: [number, number] | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (center) {
+      map.flyTo(center, Math.max(map.getZoom(), 14), { duration: 0.8 });
+    }
+  }, [center, map]);
+
+  return null;
+}
+
 const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const [captains, setCaptains] = useState<ZoneCaptain[]>([]);
   const [zoneNames, setZoneNames] = useState<Map<string, string>>(new Map());
@@ -166,8 +178,10 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [zoneNameInput, setZoneNameInput] = useState("");
+  const [namingZoneId, setNamingZoneId] = useState<string | null>(null);
   const [namingError, setNamingError] = useState<string | null>(null);
   const [isSavingName, setIsSavingName] = useState(false);
+  const [focusZoneCenter, setFocusZoneCenter] = useState<[number, number] | null>(null);
 
   const userCoords = userProfile?.location?.coordinates;
   const hasLocation = userCoords && !(userCoords.latitude === 0 && userCoords.longitude === 0);
@@ -183,13 +197,21 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const mapCenter: [number, number] =
     hasLocation ? [userCoords.latitude, userCoords.longitude] : [40.7128, -74.006];
 
-  const captainMap = useMemo(() => {
-    const map = new Map<string, ZoneCaptain>();
-    for (const captain of captains) {
-      map.set(captain.zoneId, captain);
-    }
-    return map;
-  }, [captains]);
+  const userSheisterZones = useMemo(() => {
+    if (!userProfile?.id) return [];
+    return captains
+      .filter((captain) => captain.captainUserId === userProfile.id)
+      .map((captain) => ({
+        captain,
+        zone: withDisplayName(getZoneInfoFromId(captain.zoneId), zoneNames),
+      }))
+      .sort((a, b) => b.captain.totalReps - a.captain.totalReps);
+  }, [captains, userProfile?.id, zoneNames]);
+
+  const userSheisterZoneIds = useMemo(
+    () => new Set(userSheisterZones.map(({ zone }) => zone.id)),
+    [userSheisterZones]
+  );
 
   const claimedZonesInView = useMemo(() => {
     return captains
@@ -237,6 +259,22 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     [zoneNames]
   );
 
+  const captainMap = useMemo(() => {
+    const map = new Map<string, ZoneCaptain>();
+    for (const captain of captains) {
+      map.set(captain.zoneId, captain);
+    }
+    return map;
+  }, [captains]);
+
+  const handleSelectZone = useCallback(
+    async (zone: ZoneInfo) => {
+      setFocusZoneCenter([zone.center.latitude, zone.center.longitude]);
+      await handleZoneClick(zone);
+    },
+    [handleZoneClick]
+  );
+
   const handleSaveZoneName = async (zoneId: string) => {
     setIsSavingName(true);
     setNamingError(null);
@@ -252,6 +290,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     const trimmed = zoneNameInput.trim();
     setZoneNames((prev) => new Map(prev).set(zoneId, trimmed));
     setZoneNameInput("");
+    setNamingZoneId(null);
     setNamingError(null);
     if (selectedZone?.id === zoneId) {
       setSelectedZone((prev) => (prev ? { ...prev, displayName: trimmed } : null));
@@ -267,12 +306,6 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     }
     return Array.from(seen.values());
   }, [captains]);
-
-  const userIsSheisterOfUnnamedZone =
-    userZone &&
-    userProfile?.id &&
-    captainMap.get(userZone.id)?.captainUserId === userProfile.id &&
-    !zoneNames.has(userZone.id);
 
   const selectedZoneDisplayName =
     selectedZone ? resolveZoneDisplayName(selectedZone.id, zoneNames) : "Zone Standings";
@@ -322,6 +355,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
               <MapBoundsTracker onBoundsChange={handleBoundsChange} />
+              <FlyToZone center={focusZoneCenter} />
               {hasLocation && <RecenterButton center={mapCenter} />}
 
               {claimedZonesInView.map(({ zone, captain }) => {
@@ -338,7 +372,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                     captain={captain}
                     color={getZoneColorByRelation(relation)}
                     relation={relation}
-                    isUserZone={userZone?.id === zone.id}
+                    isUserZone={userSheisterZoneIds.has(zone.id)}
                     onSelect={handleZoneClick}
                   />
                 );
@@ -365,6 +399,108 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
         </div>
 
         <div className="space-y-4">
+          {userProfile?.id && (
+            <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <Crown size={18} className="text-yellow-500" />
+                Your Sheister Zones
+              </h2>
+              {userSheisterZones.length === 0 && !loading && (
+                <p className="text-gray-500 text-sm">
+                  No zones under your control yet — complete a workout to claim one.
+                </p>
+              )}
+              {userSheisterZones.length > 0 && (
+                <ul className="space-y-2">
+                  {userSheisterZones.map(({ zone, captain }) => {
+                    const isCurrentLocation = userZone?.id === zone.id;
+                    const isSelected = selectedZone?.id === zone.id;
+                    const isUnnamed = !zoneNames.has(zone.id);
+                    const isNaming = namingZoneId === zone.id;
+
+                    return (
+                      <li key={zone.id} className="rounded-lg border border-gray-700 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectZone(zone)}
+                          className={`w-full text-left px-3 py-2.5 transition-colors ${
+                            isSelected ?
+                              "bg-yellow-900/30 border-yellow-700/50"
+                            : "bg-gray-700/50 hover:bg-gray-700"
+                          }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-gray-100 font-medium truncate">{zone.displayName}</p>
+                              {isCurrentLocation && (
+                                <p className="text-xs text-blue-400 mt-0.5">Current location</p>
+                              )}
+                            </div>
+                            <span className="text-gray-400 font-mono text-sm shrink-0">
+                              {captain.totalReps} reps
+                            </span>
+                          </div>
+                        </button>
+
+                        {isUnnamed && (
+                          <div className="px-3 py-2 bg-gray-900/50 border-t border-gray-700">
+                            {isNaming ?
+                              <>
+                                <input
+                                  type="text"
+                                  maxLength={40}
+                                  value={zoneNameInput}
+                                  onChange={(e) => {
+                                    setZoneNameInput(e.target.value);
+                                    setNamingError(null);
+                                  }}
+                                  placeholder={UNNAMED_ZONE_DISPLAY}
+                                  className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 text-sm"
+                                />
+                                {namingError && (
+                                  <p className="text-red-400 text-xs mt-1">{namingError}</p>
+                                )}
+                                <div className="flex gap-2 mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNamingZoneId(null);
+                                      setZoneNameInput("");
+                                      setNamingError(null);
+                                    }}
+                                    disabled={isSavingName}
+                                    className="flex-1 px-3 py-1.5 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700/50 disabled:opacity-50">
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveZoneName(zone.id)}
+                                    disabled={isSavingName || !zoneNameInput.trim()}
+                                    className="flex-1 px-3 py-1.5 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold text-sm disabled:opacity-50">
+                                    {isSavingName ? "Saving…" : "Save"}
+                                  </button>
+                                </div>
+                              </>
+                            : <button
+                                type="button"
+                                onClick={() => {
+                                  setNamingZoneId(zone.id);
+                                  setZoneNameInput("");
+                                  setNamingError(null);
+                                }}
+                                className="text-xs text-yellow-400 hover:text-yellow-300">
+                                Name this zone
+                              </button>
+                            }
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
           {userZone && (
             <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
               <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
@@ -391,34 +527,6 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 }
                 return <p className="text-green-400 mt-2">Unclaimed — go claim it!</p>;
               })()}
-
-              {userIsSheisterOfUnnamedZone && (
-                <div className="mt-4 pt-4 border-t border-gray-700">
-                  <label htmlFor="your-zone-name" className="block text-sm text-gray-300 mb-2">
-                    Name your zone
-                  </label>
-                  <input
-                    id="your-zone-name"
-                    type="text"
-                    maxLength={40}
-                    value={zoneNameInput}
-                    onChange={(e) => {
-                      setZoneNameInput(e.target.value);
-                      setNamingError(null);
-                    }}
-                    placeholder={UNNAMED_ZONE_DISPLAY}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 text-sm"
-                  />
-                  {namingError && <p className="text-red-400 text-sm mt-2">{namingError}</p>}
-                  <button
-                    type="button"
-                    onClick={() => handleSaveZoneName(userZone.id)}
-                    disabled={isSavingName || !zoneNameInput.trim()}
-                    className="mt-3 w-full px-4 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold text-sm disabled:opacity-50">
-                    {isSavingName ? "Saving…" : "Save Zone Name"}
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
