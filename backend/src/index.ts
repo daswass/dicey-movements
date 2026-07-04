@@ -2,27 +2,18 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import {
+  requireAuth,
+  requireSelfBody,
+  requireSelfFromUserIdField,
+  requireSelfParam,
+} from "./authMiddleware";
 import { OuraService } from "./ouraService";
 import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
 
 // Load environment variables
 dotenv.config();
-
-// Debug: Check if environment variables are loaded
-console.log("🔍 Main server environment check:");
-console.log("OURA_CLIENT_ID from process.env:", process.env.OURA_CLIENT_ID ? "SET" : "NOT SET");
-console.log("OURA_CLIENT_ID value:", process.env.OURA_CLIENT_ID);
-console.log("SUPABASE_URL from process.env:", process.env.SUPABASE_URL ? "SET" : "NOT SET");
-console.log("SUPABASE_URL value:", process.env.SUPABASE_URL);
-console.log(
-  "SUPABASE_ANON_KEY from process.env:",
-  process.env.SUPABASE_ANON_KEY ? "SET" : "NOT SET"
-);
-console.log(
-  "SUPABASE_SERVICE_ROLE_KEY from process.env:",
-  process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET" : "NOT SET"
-);
 
 // Initialize Express app
 const app = express();
@@ -65,13 +56,9 @@ app.get("/api/health", (req, res) => {
 });
 
 // Oura Integration Routes
-app.get("/api/oura/auth-url", async (req, res) => {
+app.get("/api/oura/auth-url", requireAuth, async (req, res) => {
   try {
-    const { userId } = req.query;
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
-    }
-
+    const userId = req.authUser!.id;
     const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
     const authUrl = OuraService.getAuthorizationUrl(state);
 
@@ -122,7 +109,7 @@ app.get("/api/oura/callback", async (req, res) => {
   }
 });
 
-app.get("/api/oura/status/:userId", async (req, res) => {
+app.get("/api/oura/status/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
   try {
     const { userId } = req.params;
     const tokens = await OuraService.getTokens(userId);
@@ -137,7 +124,7 @@ app.get("/api/oura/status/:userId", async (req, res) => {
   }
 });
 
-app.post("/api/oura/sync/:userId", async (req, res) => {
+app.post("/api/oura/sync/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
   try {
     const { userId } = req.params;
     const { days = 7 } = req.body;
@@ -151,7 +138,7 @@ app.post("/api/oura/sync/:userId", async (req, res) => {
   }
 });
 
-app.delete("/api/oura/disconnect/:userId", async (req, res) => {
+app.delete("/api/oura/disconnect/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -210,7 +197,7 @@ app.post("/api/oura/webhook", (req, res) => {
 });
 
 // Leaderboard routes
-app.get("/api/leaderboard/:location", async (req, res) => {
+app.get("/api/leaderboard/:location", requireAuth, async (req, res) => {
   try {
     const { location } = req.params;
     const { data, error } = await supabase
@@ -229,7 +216,7 @@ app.get("/api/leaderboard/:location", async (req, res) => {
 });
 
 // User profile routes
-app.get("/api/profile/:userId", async (req, res) => {
+app.get("/api/profile/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
   try {
     const { userId } = req.params;
     const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
@@ -253,7 +240,7 @@ app.get("/api/push/vapid-public-key", (req, res) => {
   }
 });
 
-app.post("/api/push/subscribe", async (req, res) => {
+app.post("/api/push/subscribe", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
     const { userId, subscription } = req.body;
 
@@ -274,7 +261,7 @@ app.post("/api/push/subscribe", async (req, res) => {
   }
 });
 
-app.delete("/api/push/unsubscribe", async (req, res) => {
+app.delete("/api/push/unsubscribe", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
     const { userId, endpoint } = req.body;
 
@@ -295,7 +282,7 @@ app.delete("/api/push/unsubscribe", async (req, res) => {
   }
 });
 
-app.put("/api/push/activity", async (req, res) => {
+app.put("/api/push/activity", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
     const { userId, deviceId } = req.body;
 
@@ -316,7 +303,7 @@ app.put("/api/push/activity", async (req, res) => {
   }
 });
 
-app.post("/api/push/send", async (req, res) => {
+app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
     const { userId, payload } = req.body;
 
@@ -379,7 +366,7 @@ app.post("/api/push/send", async (req, res) => {
   }
 });
 
-app.post("/api/workout/complete", async (req, res) => {
+app.post("/api/workout/complete", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
     const { userId, exercise, reps, multipliers } = req.body;
 
@@ -486,7 +473,11 @@ app.post("/api/workout/complete", async (req, res) => {
   }
 });
 
-app.post("/api/high-five/send", async (req, res) => {
+app.post(
+  "/api/high-five/send",
+  requireAuth,
+  requireSelfFromUserIdField("fromUserId"),
+  async (req, res) => {
   try {
     const { fromUserId, toUserId, activity } = req.body;
 
@@ -544,9 +535,14 @@ app.post("/api/high-five/send", async (req, res) => {
     console.error("Error sending high five:", error);
     res.status(500).json({ error: "Failed to send high five" });
   }
-});
+  }
+);
 
-app.put("/api/notifications/settings/:userId", async (req, res) => {
+app.put(
+  "/api/notifications/settings/:userId",
+  requireAuth,
+  requireSelfParam("userId"),
+  async (req, res) => {
   try {
     const { userId } = req.params;
     const { setting, enabled } = req.body;
@@ -607,7 +603,8 @@ app.put("/api/notifications/settings/:userId", async (req, res) => {
     console.error("Error updating notification settings:", error);
     res.status(500).json({ error: "Failed to update notification settings" });
   }
-});
+  }
+);
 
 // Start server
 const PORT = process.env.PORT || 3001;

@@ -1,4 +1,5 @@
 import { UserProfile, LeaderboardEntry, FriendActivity } from "../types/social";
+import { supabase } from "./supabaseClient";
 
 // API configuration for backend endpoints
 const BACKEND_URL =
@@ -6,16 +7,32 @@ const BACKEND_URL =
   import.meta.env.VITE_API_BASE_URL ||
   "https://dicey-movements-backend.onrender.com";
 
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
+
+  return headers;
+}
+
 export const api = {
   baseUrl: BACKEND_URL,
 
-  // Helper function to make API calls
   async fetch(endpoint: string, options: RequestInit = {}) {
     const url = `${this.baseUrl}${endpoint}`;
+    const authHeaders = await getAuthHeaders();
     const response = await fetch(url, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...authHeaders,
         ...options.headers,
       },
     });
@@ -43,7 +60,7 @@ export const api = {
     return this.fetch("/api/push/vapid-public-key");
   },
 
-  async subscribeToPush(userId: string, subscription: any) {
+  async subscribeToPush(userId: string, subscription: PushSubscriptionJSON) {
     return this.fetch("/api/push/subscribe", {
       method: "POST",
       body: JSON.stringify({ userId, subscription }),
@@ -71,7 +88,7 @@ export const api = {
     });
   },
 
-  async completeWorkout(userId: string, exercise: string, reps: number, multipliers?: any) {
+  async completeWorkout(userId: string, exercise: string, reps: number, multipliers?: unknown) {
     return this.fetch("/api/workout/complete", {
       method: "POST",
       body: JSON.stringify({ userId, exercise, reps, multipliers }),
@@ -80,7 +97,10 @@ export const api = {
 };
 
 export const fetchLeaderboard = async (location: string): Promise<LeaderboardEntry[]> => {
-  const response = await fetch(`${BACKEND_URL}/api/leaderboard/${encodeURIComponent(location)}`);
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(`${BACKEND_URL}/api/leaderboard/${encodeURIComponent(location)}`, {
+    headers: authHeaders,
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch leaderboard");
   }
@@ -88,7 +108,10 @@ export const fetchLeaderboard = async (location: string): Promise<LeaderboardEnt
 };
 
 export const fetchUserProfile = async (userId: string): Promise<UserProfile> => {
-  const response = await fetch(`${BACKEND_URL}/api/profile/${userId}`);
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(`${BACKEND_URL}/api/profile/${userId}`, {
+    headers: authHeaders,
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch user profile");
   }
@@ -96,7 +119,10 @@ export const fetchUserProfile = async (userId: string): Promise<UserProfile> => 
 };
 
 export const fetchFriendActivities = async (userId: string): Promise<FriendActivity[]> => {
-  const response = await fetch(`${BACKEND_URL}/api/friends/activity/${userId}`);
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(`${BACKEND_URL}/api/friends/activity/${userId}`, {
+    headers: authHeaders,
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch friend activities");
   }

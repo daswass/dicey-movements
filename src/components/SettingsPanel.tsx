@@ -64,7 +64,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     setIsConnecting(true);
     try {
-      const authUrl = await OuraService.getAuthUrl(currentUser.id);
+      const authUrl = await OuraService.getAuthUrl();
       window.location.href = authUrl;
     } catch (error) {
       console.error("Error getting Oura auth URL:", error);
