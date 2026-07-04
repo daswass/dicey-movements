@@ -1,6 +1,9 @@
 import { DiceHeistResult, ZoneBounds, ZoneCaptain, ZoneInfo, ZoneStandings } from "../types/zones";
 import { supabase } from "./supabaseClient";
 
+/** Public label for zones without a custom name. */
+export const UNNAMED_ZONE_DISPLAY = "Unnamed Zone";
+
 /** ~2km grid cells at mid-latitudes. Keeps zones neighborhood-sized. */
 export const ZONE_GRID_SIZE = 0.02;
 
@@ -66,6 +69,73 @@ export async function fetchFriendIds(userId: string): Promise<Set<string>> {
   return new Set(data.map((row) => (row.user_id === userId ? row.friend_id : row.user_id)));
 }
 
+export function resolveZoneDisplayName(
+  zoneId: string,
+  zoneNames: ReadonlyMap<string, string>
+): string {
+  return zoneNames.get(zoneId)?.trim() || UNNAMED_ZONE_DISPLAY;
+}
+
+export async function fetchZoneNames(zoneIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (zoneIds.length === 0) {
+    return names;
+  }
+
+  const uniqueIds = [...new Set(zoneIds)];
+  const { data, error } = await supabase.from("zone_names").select("zone_id, name").in("zone_id", uniqueIds);
+
+  if (error) {
+    console.error("zoneService: failed to fetch zone names", error);
+    return names;
+  }
+
+  for (const row of data || []) {
+    if (row.name?.trim()) {
+      names.set(row.zone_id, row.name.trim());
+    }
+  }
+
+  return names;
+}
+
+export async function isZoneUnnamed(zoneId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("zone_names")
+    .select("zone_id")
+    .eq("zone_id", zoneId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("zoneService: failed to check zone name", error);
+    return true;
+  }
+
+  return !data;
+}
+
+export async function nameUnnamedZone(
+  zoneId: string,
+  name: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Enter a zone name" };
+  }
+
+  const { error } = await supabase.rpc("name_unnamed_zone", {
+    p_zone_id: zoneId,
+    p_name: trimmed,
+  });
+
+  if (error) {
+    console.error("zoneService: failed to name zone", error);
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
 export function latLngToIndices(latitude: number, longitude: number) {
   return {
     latIndex: Math.floor(latitude / ZONE_GRID_SIZE),
@@ -93,8 +163,7 @@ export function getZoneBounds(latIndex: number, lngIndex: number): ZoneBounds {
 
 export function getZoneFromCoordinates(
   latitude: number,
-  longitude: number,
-  city?: string
+  longitude: number
 ): ZoneInfo {
   const { latIndex, lngIndex } = latLngToIndices(latitude, longitude);
   const bounds = getZoneBounds(latIndex, lngIndex);
@@ -103,21 +172,17 @@ export function getZoneFromCoordinates(
     longitude: (bounds.west + bounds.east) / 2,
   };
 
-  const displayName = city
-    ? `${city} · Block ${latIndex},${lngIndex}`
-    : `Sector ${center.latitude.toFixed(2)}°, ${center.longitude.toFixed(2)}°`;
-
   return {
     id: indicesToZoneId(latIndex, lngIndex),
     latIndex,
     lngIndex,
     bounds,
     center,
-    displayName,
+    displayName: UNNAMED_ZONE_DISPLAY,
   };
 }
 
-export function getZoneInfoFromId(zoneId: string, city?: string): ZoneInfo {
+export function getZoneInfoFromId(zoneId: string): ZoneInfo {
   const { latIndex, lngIndex } = zoneIdToIndices(zoneId);
   const bounds = getZoneBounds(latIndex, lngIndex);
   const center = {
@@ -125,17 +190,13 @@ export function getZoneInfoFromId(zoneId: string, city?: string): ZoneInfo {
     longitude: (bounds.west + bounds.east) / 2,
   };
 
-  const displayName = city
-    ? `${city} · Block ${latIndex},${lngIndex}`
-    : `Sector ${center.latitude.toFixed(2)}°, ${center.longitude.toFixed(2)}°`;
-
   return {
     id: zoneId,
     latIndex,
     lngIndex,
     bounds,
     center,
-    displayName,
+    displayName: UNNAMED_ZONE_DISPLAY,
   };
 }
 
@@ -187,7 +248,7 @@ export function getZonesInBounds(
           latitude: (bounds.south + bounds.north) / 2,
           longitude: (bounds.west + bounds.east) / 2,
         },
-        displayName: `Sector ${latIndex},${lngIndex}`,
+        displayName: UNNAMED_ZONE_DISPLAY,
       });
     }
   }
@@ -312,17 +373,23 @@ export async function checkDiceHeist(
   const userStanding = standings.find((s) => s.userId === userId);
   const newTotalReps = (userStanding?.totalReps || 0) + addedReps;
 
-  const topAfter = standings
+  const previousUserReps = userStanding?.totalReps || 0;
+  const topAmongOthers = standings
     .filter((s) => s.userId !== userId)
     .reduce((max, s) => Math.max(max, s.totalReps), 0);
 
+  const zoneIsUnnamed = await isZoneUnnamed(zoneId);
+
+  const wasSheister = previousUserReps > topAmongOthers;
+  const isNowSheister = newTotalReps > topAmongOthers;
+  const becameSheister = !wasSheister && isNowSheister;
   const isHeist =
-    newTotalReps > topAfter &&
-    previousCaptainId !== undefined &&
-    previousCaptainId !== userId;
+    becameSheister && previousCaptainId !== undefined && previousCaptainId !== userId;
 
   return {
     isHeist,
+    becameSheister,
+    zoneIsUnnamed,
     zoneInfo,
     previousCaptain: currentCaptain?.captainUsername,
     newTotalReps,
@@ -338,7 +405,7 @@ export function buildZoneFromLocation(location?: {
     return { zoneId: null, zoneInfo: null };
   }
 
-  const zoneInfo = getZoneFromCoordinates(coords.latitude, coords.longitude, location?.city);
+  const zoneInfo = getZoneFromCoordinates(coords.latitude, coords.longitude);
   return { zoneId: zoneInfo.id, zoneInfo };
 }
 

@@ -30,6 +30,8 @@ export interface ZoneStandings {
 
 export interface DiceHeistResult {
   isHeist: boolean;
+  becameSheister: boolean;
+  zoneIsUnnamed: boolean;
   zoneInfo: ZoneInfo;
   previousCaptain?: string;
   newTotalReps: number;

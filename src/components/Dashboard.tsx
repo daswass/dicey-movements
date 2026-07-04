@@ -14,7 +14,7 @@ import DashboardStatsPanel from "./DashboardStatsPanel";
 import History from "./History";
 import SocialFeatures from "./SocialFeatures";
 import WorkoutFlow from "./WorkoutFlow";
-import { WorkoutCompleteHeistInfo } from "./WorkoutCompleteModal";
+import type { WorkoutCompleteModalState } from "../hooks/useWorkoutComplete";
 
 const Achievements = lazy(() =>
   import("./Achievements").then((module) => ({ default: module.Achievements }))
@@ -80,9 +80,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
     const [showSettings, setShowSettings] = useState(false);
-    const [workoutCompleteModal, setWorkoutCompleteModal] = useState<{
-      heist?: WorkoutCompleteHeistInfo;
-    } | null>(null);
+    const [workoutCompleteModal, setWorkoutCompleteModal] = useState<WorkoutCompleteModalState | null>(
+      null
+    );
     const [showConfirmModal, setShowConfirmModal] = useState<{
       show: boolean;
       type: "game" | "multipliers" | null;

@@ -10,13 +10,18 @@ import { buildZoneFromLocation, checkDiceHeist } from "../utils/zoneService";
 import type { Dispatch, SetStateAction } from "react";
 import { WorkoutCompleteHeistInfo } from "../components/WorkoutCompleteModal";
 
+export interface WorkoutCompleteModalState {
+  heist?: WorkoutCompleteHeistInfo;
+  onDismiss?: () => void;
+}
+
 interface UseWorkoutCompleteOptions {
   userId: string | undefined;
   latestSession: WorkoutSession | null;
   multipliers: ExerciseMultipliers;
   isCompletingWorkout: boolean;
   setIsCompletingWorkout: (value: boolean) => void;
-  setWorkoutCompleteModal: (value: { heist?: WorkoutCompleteHeistInfo } | null) => void;
+  setWorkoutCompleteModal: (value: WorkoutCompleteModalState | null) => void;
   setCurrentWorkoutComplete: (value: boolean) => void;
   setTimerComplete: (value: boolean) => void;
   setLatestSession: (value: WorkoutSession | null) => void;
@@ -129,15 +134,25 @@ export function useWorkoutComplete({
           return;
         }
 
-        if (heistResult?.isHeist) {
-          setWorkoutCompleteModal({
-            heist: {
-              zoneName: heistResult.zoneInfo.displayName,
-              previousCaptain: heistResult.previousCaptain,
-              totalReps: heistResult.newTotalReps,
-            },
-          });
-          scheduleRestart(3500);
+        if (heistResult) {
+          const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
+          if (heistResult.isHeist || canNameZone) {
+            clearTimeout(restartTimerId);
+            setWorkoutCompleteModal({
+              heist: {
+                zoneId: heistResult.zoneInfo.id,
+                zoneName: heistResult.zoneInfo.displayName,
+                previousCaptain: heistResult.previousCaptain,
+                totalReps: heistResult.newTotalReps,
+                isHeist: heistResult.isHeist,
+                canNameZone,
+              },
+              onDismiss: restartWorkout,
+            });
+            if (!canNameZone) {
+              scheduleRestart(heistResult.isHeist ? 3500 : 2000);
+            }
+          }
         }
 
         await fetchHistory();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  UNNAMED_ZONE_DISPLAY,
   ZONE_GRID_SIZE,
   buildZoneFromLocation,
   getCaptainRelation,
@@ -8,6 +9,7 @@ import {
   getZoneFromCoordinates,
   indicesToZoneId,
   latLngToIndices,
+  resolveZoneDisplayName,
   zoneIdToIndices,
 } from "./zoneService";
 
@@ -33,15 +35,26 @@ describe("zone grid helpers", () => {
     });
   });
 
-  it("creates zone info with city label", () => {
-    const zone = getZoneFromCoordinates(40.758, -73.9855, "New York");
+  it("creates zone info with unnamed display label", () => {
+    const zone = getZoneFromCoordinates(40.758, -73.9855);
     expect(zone.id).toBe(
       indicesToZoneId(
         Math.floor(40.758 / ZONE_GRID_SIZE),
         Math.floor(-73.9855 / ZONE_GRID_SIZE)
       )
     );
-    expect(zone.displayName).toContain("New York");
+    expect(zone.displayName).toBe(UNNAMED_ZONE_DISPLAY);
+  });
+});
+
+describe("resolveZoneDisplayName", () => {
+  it("returns custom name when set", () => {
+    const names = new Map([["2037_-3699", "The Gym Block"]]);
+    expect(resolveZoneDisplayName("2037_-3699", names)).toBe("The Gym Block");
+  });
+
+  it("falls back to unnamed label", () => {
+    expect(resolveZoneDisplayName("2037_-3699", new Map())).toBe(UNNAMED_ZONE_DISPLAY);
   });
 });
 
@@ -66,7 +79,7 @@ describe("buildZoneFromLocation", () => {
     });
 
     expect(result.zoneId).not.toBeNull();
-    expect(result.zoneInfo?.displayName).toContain("New York");
+    expect(result.zoneInfo?.displayName).toBe(UNNAMED_ZONE_DISPLAY);
   });
 });
 

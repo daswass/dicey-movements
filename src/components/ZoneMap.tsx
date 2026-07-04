@@ -7,12 +7,16 @@ import { ZoneCaptain, ZoneInfo, ZoneStandings } from "../types/zones";
 import {
   fetchFriendIds,
   fetchZoneCaptains,
+  fetchZoneNames,
   fetchZoneStandings,
   getCaptainRelation,
   getZoneColorByRelation,
   getZoneFromCoordinates,
   getZoneInfoFromId,
   getZoneRadiusMeters,
+  nameUnnamedZone,
+  resolveZoneDisplayName,
+  UNNAMED_ZONE_DISPLAY,
   ZONE_RELATION_COLORS,
   ZoneCaptainRelation,
 } from "../utils/zoneService";
@@ -38,6 +42,13 @@ const SELF_GRADIENT_RINGS = [
   { scale: 0.46, opacity: 0.44 },
   { scale: 0.28, opacity: 0.58 },
 ];
+
+function withDisplayName(zone: ZoneInfo, zoneNames: ReadonlyMap<string, string>): ZoneInfo {
+  return {
+    ...zone,
+    displayName: resolveZoneDisplayName(zone.id, zoneNames),
+  };
+}
 
 interface ClaimedZoneCircleProps {
   zone: ZoneInfo;
@@ -147,24 +158,27 @@ function RecenterButton({ center }: { center: [number, number] }) {
 
 const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const [captains, setCaptains] = useState<ZoneCaptain[]>([]);
+  const [zoneNames, setZoneNames] = useState<Map<string, string>>(new Map());
   const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
   const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const [selectedZone, setSelectedZone] = useState<ZoneInfo | null>(null);
   const [standings, setStandings] = useState<ZoneStandings[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [zoneNameInput, setZoneNameInput] = useState("");
+  const [namingError, setNamingError] = useState<string | null>(null);
+  const [isSavingName, setIsSavingName] = useState(false);
 
   const userCoords = userProfile?.location?.coordinates;
   const hasLocation = userCoords && !(userCoords.latitude === 0 && userCoords.longitude === 0);
 
   const userZone = useMemo(() => {
     if (!hasLocation) return null;
-    return getZoneFromCoordinates(
-      userCoords.latitude,
-      userCoords.longitude,
-      userProfile?.location?.city,
+    return withDisplayName(
+      getZoneFromCoordinates(userCoords.latitude, userCoords.longitude),
+      zoneNames
     );
-  }, [hasLocation, userCoords, userProfile?.location?.city]);
+  }, [hasLocation, userCoords, zoneNames]);
 
   const mapCenter: [number, number] =
     hasLocation ? [userCoords.latitude, userCoords.longitude] : [40.7128, -74.006];
@@ -181,13 +195,13 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     return captains
       .map((captain) => ({
         captain,
-        zone: getZoneInfoFromId(captain.zoneId, userProfile?.location?.city),
+        zone: withDisplayName(getZoneInfoFromId(captain.zoneId), zoneNames),
       }))
       .filter(({ zone }) => {
         if (!mapBounds) return true;
         return mapBounds.contains([zone.center.latitude, zone.center.longitude]);
       });
-  }, [captains, mapBounds, userProfile?.location?.city]);
+  }, [captains, mapBounds, zoneNames]);
 
   const loadCaptains = useCallback(async () => {
     setRefreshing(true);
@@ -198,6 +212,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
       ]);
       setCaptains(data);
       setFriendIds(friends);
+      setZoneNames(await fetchZoneNames(data.map((captain) => captain.zoneId)));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -212,11 +227,36 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     setMapBounds(bounds);
   }, []);
 
-  const handleZoneClick = useCallback(async (zone: ZoneInfo) => {
-    setSelectedZone(zone);
-    const data = await fetchZoneStandings(zone.id);
-    setStandings(data);
-  }, []);
+  const handleZoneClick = useCallback(
+    async (zone: ZoneInfo) => {
+      const namedZone = withDisplayName(zone, zoneNames);
+      setSelectedZone(namedZone);
+      const data = await fetchZoneStandings(zone.id);
+      setStandings(data);
+    },
+    [zoneNames]
+  );
+
+  const handleSaveZoneName = async (zoneId: string) => {
+    setIsSavingName(true);
+    setNamingError(null);
+
+    const result = await nameUnnamedZone(zoneId, zoneNameInput);
+    setIsSavingName(false);
+
+    if (!result.ok) {
+      setNamingError(result.error);
+      return;
+    }
+
+    const trimmed = zoneNameInput.trim();
+    setZoneNames((prev) => new Map(prev).set(zoneId, trimmed));
+    setZoneNameInput("");
+    setNamingError(null);
+    if (selectedZone?.id === zoneId) {
+      setSelectedZone((prev) => (prev ? { ...prev, displayName: trimmed } : null));
+    }
+  };
 
   const uniqueCaptains = useMemo(() => {
     const seen = new Map<string, ZoneCaptain>();
@@ -227,6 +267,15 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     }
     return Array.from(seen.values());
   }, [captains]);
+
+  const userIsSheisterOfUnnamedZone =
+    userZone &&
+    userProfile?.id &&
+    captainMap.get(userZone.id)?.captainUserId === userProfile.id &&
+    !zoneNames.has(userZone.id);
+
+  const selectedZoneDisplayName =
+    selectedZone ? resolveZoneDisplayName(selectedZone.id, zoneNames) : "Zone Standings";
 
   const legendItems = [
     { relation: "self" as const, label: "You" },
@@ -279,7 +328,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 const relation = getCaptainRelation(
                   captain.captainUserId,
                   userProfile?.id || "",
-                  friendIds,
+                  friendIds
                 );
 
                 return (
@@ -342,13 +391,39 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 }
                 return <p className="text-green-400 mt-2">Unclaimed — go claim it!</p>;
               })()}
+
+              {userIsSheisterOfUnnamedZone && (
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                  <label htmlFor="your-zone-name" className="block text-sm text-gray-300 mb-2">
+                    Name your zone
+                  </label>
+                  <input
+                    id="your-zone-name"
+                    type="text"
+                    maxLength={40}
+                    value={zoneNameInput}
+                    onChange={(e) => {
+                      setZoneNameInput(e.target.value);
+                      setNamingError(null);
+                    }}
+                    placeholder={UNNAMED_ZONE_DISPLAY}
+                    className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 text-sm"
+                  />
+                  {namingError && <p className="text-red-400 text-sm mt-2">{namingError}</p>}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveZoneName(userZone.id)}
+                    disabled={isSavingName || !zoneNameInput.trim()}
+                    className="mt-3 w-full px-4 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold text-sm disabled:opacity-50">
+                    {isSavingName ? "Saving…" : "Save Zone Name"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-            <h2 className="text-lg font-semibold text-white mb-3">
-              {selectedZone ? selectedZone.displayName : "Zone Standings"}
-            </h2>
+            <h2 className="text-lg font-semibold text-white mb-3">{selectedZoneDisplayName}</h2>
             {!selectedZone && (
               <p className="text-gray-500 text-sm">
                 Click a claimed zone on the map to see standings.
@@ -363,7 +438,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                   const relation = getCaptainRelation(
                     entry.userId,
                     userProfile?.id || "",
-                    friendIds,
+                    friendIds
                   );
                   const dotColor = getZoneColorByRelation(relation);
 
