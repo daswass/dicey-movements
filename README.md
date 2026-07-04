@@ -85,6 +85,7 @@ A fitness PWA that combines dice-rolled workouts with timers, social competition
 4. Run database migrations in the Supabase SQL editor as needed, including:
    - `create_activities_table.sql`
    - `create_zone_competition.sql` — zone scoring and `get_zone_captains()` RPC
+   - `enable_activities_rls.sql` — row-level security on workout rows
 
 5. Start the dev server:
 
@@ -97,6 +98,16 @@ A fitness PWA that combines dice-rolled workouts with timers, social competition
 ### Backend
 
 The Express API lives in `backend/`. See `backend/package.json` for scripts. It handles web push (VAPID), friend activity notifications, Oura OAuth/webhooks, and workout completion alerts.
+
+Backend environment variables:
+
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+`SUPABASE_ANON_KEY` is required for JWT verification on protected API routes.
 
 ## Zone Competition
 
