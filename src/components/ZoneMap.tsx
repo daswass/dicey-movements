@@ -10,11 +10,11 @@ import {
   fetchZoneStandings,
   getCaptainRelation,
   getZoneColorByRelation,
-  getZoneColorForCaptain,
   getZoneFromCoordinates,
   getZoneInfoFromId,
   getZoneRadiusMeters,
   ZONE_RELATION_COLORS,
+  ZoneCaptainRelation,
 } from "../utils/zoneService";
 import "leaflet/dist/leaflet.css";
 
@@ -31,10 +31,19 @@ const GRADIENT_RINGS = [
   { scale: 0.28, opacity: 0.34 },
 ];
 
+const SELF_GRADIENT_RINGS = [
+  { scale: 1.0, opacity: 0.14 },
+  { scale: 0.82, opacity: 0.22 },
+  { scale: 0.64, opacity: 0.32 },
+  { scale: 0.46, opacity: 0.44 },
+  { scale: 0.28, opacity: 0.58 },
+];
+
 interface ClaimedZoneCircleProps {
   zone: ZoneInfo;
   captain: ZoneCaptain;
   color: string;
+  relation: ZoneCaptainRelation;
   isUserZone: boolean;
   onSelect: (zone: ZoneInfo) => void;
 }
@@ -43,15 +52,17 @@ const ClaimedZoneCircle: React.FC<ClaimedZoneCircleProps> = ({
   zone,
   captain,
   color,
+  relation,
   isUserZone,
   onSelect,
 }) => {
   const center: [number, number] = [zone.center.latitude, zone.center.longitude];
   const baseRadius = getZoneRadiusMeters(zone.center.latitude);
+  const rings = relation === "self" ? SELF_GRADIENT_RINGS : GRADIENT_RINGS;
 
   return (
     <>
-      {GRADIENT_RINGS.map((ring, index) => (
+      {rings.map((ring, index) => (
         <Circle
           key={`${zone.id}-ring-${index}`}
           center={center}
@@ -225,19 +236,19 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-white mb-2">Territory Map</h1>
-        <p className="text-gray-400">
+    <div className="max-w-7xl mx-auto p-3 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Territory Map</h1>
+        <p className="text-gray-400 text-sm sm:text-base">
           Claimed zones glow on the map —{" "}
-          <span className="text-green-400">green</span> for you,{" "}
+          <span className="text-green-500">green</span> for you,{" "}
           <span className="text-blue-400">blue</span> for friends,{" "}
           <span className="text-red-400">red</span> for everyone else. Take over a zone for a{" "}
           <span className="text-yellow-400 font-semibold">Dice Heist!</span>
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2">
           <div className="relative rounded-xl overflow-hidden border border-gray-700 shadow-xl">
             {!hasLocation && (
@@ -257,7 +268,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
             <MapContainer
               center={mapCenter}
               zoom={hasLocation ? 14 : 4}
-              className="h-[500px] w-full z-0"
+              className="h-[260px] sm:h-[380px] lg:h-[500px] w-full z-0"
               scrollWheelZoom>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -266,24 +277,29 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
               <MapBoundsTracker onBoundsChange={handleBoundsChange} />
               {hasLocation && <RecenterButton center={mapCenter} />}
 
-              {claimedZonesInView.map(({ zone, captain }) => (
+              {claimedZonesInView.map(({ zone, captain }) => {
+                const relation = getCaptainRelation(
+                  captain.captainUserId,
+                  userProfile?.id || "",
+                  friendIds
+                );
+
+                return (
                 <ClaimedZoneCircle
                   key={zone.id}
                   zone={zone}
                   captain={captain}
-                  color={getZoneColorForCaptain(
-                    captain.captainUserId,
-                    userProfile?.id || "",
-                    friendIds
-                  )}
+                  color={getZoneColorByRelation(relation)}
+                  relation={relation}
                   isUserZone={userZone?.id === zone.id}
                   onSelect={handleZoneClick}
                 />
-              ))}
+                );
+              })}
             </MapContainer>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-3 sm:mt-4 flex flex-wrap gap-2 sm:gap-3">
             {legendItems.map(({ relation, label }) => (
               <div
                 key={relation}
@@ -376,16 +392,6 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
             )}
           </div>
 
-          <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 text-sm text-gray-400">
-            <h3 className="text-white font-semibold mb-2">How zones work</h3>
-            <ul className="space-y-1.5 list-disc list-inside">
-              <li>Zones are ~2km areas based on your location</li>
-              <li>Only claimed zones appear on the map</li>
-              <li>Every completed exercise adds reps to your current zone</li>
-              <li>Captains are recalculated on a rolling 7-day window</li>
-              <li>Overtake the captain to trigger a Dice Heist!</li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>

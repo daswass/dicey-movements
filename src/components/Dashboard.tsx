@@ -7,9 +7,10 @@ import { AchievementService } from "../utils/achievementService";
 import { activitySyncService } from "../utils/activitySyncService";
 import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
+import { getUserLocation } from "../utils/socialService";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
 import { timerSyncService } from "../utils/timerSyncService";
-import { buildZoneIdFromProfile, checkDiceHeist, getZoneFromCoordinates } from "../utils/zoneService";
+import { buildZoneFromLocation, checkDiceHeist } from "../utils/zoneService";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
@@ -251,138 +252,145 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     ]);
 
     const handleWorkoutComplete = useCallback(async () => {
-      // Prevent multiple clicks
       if (isCompletingWorkout) return;
+      if (!latestSession || !user) return;
 
       setIsCompletingWorkout(true);
 
-      const dismissModalAndRestart = (heist?: WorkoutCompleteHeistInfo) => {
-        setWorkoutCompleteModal({ heist });
-        const duration = heist ? 3500 : 2000;
+      const session = latestSession;
+      const currentMultiplier = multipliers[session.exercise.id] || 1;
+      let restartTimerId: ReturnType<typeof setTimeout>;
 
-        setTimeout(() => {
-          setWorkoutCompleteModal(null);
-          setCurrentWorkoutComplete(false);
-          setTimerComplete(false);
-          sessionStorage.removeItem("openedFromNotification");
-          resetNotificationFlags();
-          onStartTimer();
-          setLatestSession(null);
-          setIsRollAndStartMode(false);
-          console.log("Dashboard: Optimistically restarted timer after workout complete");
-        }, duration);
+      const restartWorkout = () => {
+        setWorkoutCompleteModal(null);
+        setCurrentWorkoutComplete(false);
+        setTimerComplete(false);
+        sessionStorage.removeItem("openedFromNotification");
+        resetNotificationFlags();
+        onStartTimer();
+        setLatestSession(null);
+        setIsRollAndStartMode(false);
+        setIsCompletingWorkout(false);
+        console.log("Dashboard: Optimistically restarted timer after workout complete");
       };
 
-      try {
-        if (!latestSession || !user) return;
+      const scheduleRestart = (delayMs: number) => {
+        clearTimeout(restartTimerId);
+        restartTimerId = setTimeout(restartWorkout, delayMs);
+      };
 
-        // Clear timer notifications when completing exercise
+      // Show modal and restart timer immediately — don't wait on GPS
+      setWorkoutCompleteModal({});
+      scheduleRestart(2000);
+
+      notificationService.clearAllNotifications().catch((error) => {
+        console.error("Dashboard: Error clearing notifications:", error);
+      });
+      notificationService.sendClearNotificationMessage("timer-notification").catch((error) => {
+        console.error("Dashboard: Error clearing timer notification:", error);
+      });
+
+      // GPS, zone scoring, and persistence run in the background
+      void (async () => {
         try {
-          console.log("Dashboard: Clearing timer notifications on workout complete");
-          notificationService.clearAllNotifications();
-          await notificationService.sendClearNotificationMessage("timer-notification");
-        } catch (error) {
-          console.error("Dashboard: Error clearing notifications:", error);
-        }
+          const freshLocation = await getUserLocation({ fresh: true });
+          const { zoneId, zoneInfo } = buildZoneFromLocation(freshLocation);
 
-        const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
+          if (zoneId && freshLocation.coordinates.latitude !== 0) {
+            setUserProfile((prev) => (prev ? { ...prev, location: freshLocation } : null));
+            supabase
+              .from("profiles")
+              .update({ location: freshLocation })
+              .eq("id", user.id)
+              .then(({ error: locationError }) => {
+                if (locationError) {
+                  console.error("Dashboard: Error updating profile location:", locationError);
+                }
+              });
+          }
 
-        const zoneId = buildZoneIdFromProfile(userProfile?.location);
-        const zoneInfo =
-          zoneId && userProfile?.location?.coordinates
-            ? getZoneFromCoordinates(
-                userProfile.location.coordinates.latitude,
-                userProfile.location.coordinates.longitude,
-                userProfile.location.city
-              )
-            : null;
+          let heistResult = null;
+          if (zoneId && zoneInfo) {
+            heistResult = await checkDiceHeist(zoneId, user.id, session.reps, zoneInfo);
+          }
 
-        let heistResult = null;
-        if (zoneId && zoneInfo) {
-          heistResult = await checkDiceHeist(zoneId, user.id, latestSession.reps, zoneInfo);
-        }
+          const newActivity = {
+            id: crypto.randomUUID(),
+            user_id: user.id,
+            timestamp: new Date().toISOString(),
+            exercise_id: session.exercise.id,
+            exercise_name: session.exercise.name,
+            reps: session.reps,
+            multiplier: currentMultiplier,
+            dice_roll: session.diceRoll,
+            zone_id: zoneId,
+          };
 
-        const newActivity = {
-          id: crypto.randomUUID(),
-          user_id: user.id,
-          timestamp: new Date().toISOString(),
-          exercise_id: latestSession.exercise.id,
-          exercise_name: latestSession.exercise.name,
-          reps: latestSession.reps,
-          multiplier: currentMultiplier,
-          dice_roll: latestSession.diceRoll,
-          zone_id: zoneId,
-        };
+          const { error } = await supabase.from("activities").insert(newActivity);
+          if (error) {
+            console.error("Dashboard: Error inserting activity:", error);
+            setHistory((prevHistory) => prevHistory.slice(1));
+            return;
+          }
 
-        const { error } = await supabase.from("activities").insert(newActivity);
-        if (error) {
-          console.error("Dashboard: Error inserting activity:", error);
-          setHistory((prevHistory) => prevHistory.slice(1));
-          return;
-        }
-
-        const heistInfo: WorkoutCompleteHeistInfo | undefined = heistResult?.isHeist
-          ? {
-              zoneName: heistResult.zoneInfo.displayName,
-              previousCaptain: heistResult.previousCaptain,
-              totalReps: heistResult.newTotalReps,
-            }
-          : undefined;
-
-        dismissModalAndRestart(heistInfo);
-
-        await fetchHistory();
-
-        // Refresh user profile to get updated streak data
-        try {
-          const { data: updatedProfile, error: profileError } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", user.id)
-            .single();
-
-          if (updatedProfile && !profileError) {
-            setUserProfile({
-              ...updatedProfile,
-              timer_duration: updatedProfile.timer_duration || 300,
+          if (heistResult?.isHeist) {
+            setWorkoutCompleteModal({
+              heist: {
+                zoneName: heistResult.zoneInfo.displayName,
+                previousCaptain: heistResult.previousCaptain,
+                totalReps: heistResult.newTotalReps,
+              },
             });
-          } else {
-            console.error("Dashboard: Error refreshing user profile:", profileError);
+            scheduleRestart(3500);
           }
-        } catch (profileError) {
-          console.error("Dashboard: Exception refreshing user profile:", profileError);
-        }
 
-        // Check for achievements after successful activity insertion
-        try {
-          const singleWorkoutAchievements =
-            await AchievementService.checkSingleWorkoutAchievements(user.id, latestSession.reps);
-          const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
-          const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
-          if (allNewAchievements.length > 0) {
-            setUnlockedAchievements(allNewAchievements);
+          await fetchHistory();
+
+          try {
+            const { data: updatedProfile, error: profileError } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", user.id)
+              .single();
+
+            if (updatedProfile && !profileError) {
+              setUserProfile({
+                ...updatedProfile,
+                timer_duration: updatedProfile.timer_duration || 300,
+              });
+            } else {
+              console.error("Dashboard: Error refreshing user profile:", profileError);
+            }
+          } catch (profileError) {
+            console.error("Dashboard: Exception refreshing user profile:", profileError);
+          }
+
+          try {
+            const singleWorkoutAchievements =
+              await AchievementService.checkSingleWorkoutAchievements(user.id, session.reps);
+            const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
+            const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
+            if (allNewAchievements.length > 0) {
+              setUnlockedAchievements(allNewAchievements);
+            }
+          } catch (error) {
+            console.error("Error checking achievements:", error);
+          }
+
+          try {
+            await api.completeWorkout(
+              user.id,
+              session.exercise.name,
+              session.reps,
+              multipliers
+            );
+          } catch (error) {
+            console.error("Error completing workout:", error);
           }
         } catch (error) {
-          console.error("Error checking achievements:", error);
+          console.error("Dashboard: Error in background workout complete:", error);
         }
-
-        // Send friend activity notification
-        try {
-          await api.completeWorkout(
-            user.id,
-            latestSession.exercise.name,
-            latestSession.reps,
-            multipliers
-          );
-        } catch (error) {
-          console.error("Error completing workout:", error);
-        }
-      } catch (error) {
-        console.error("Dashboard: Error in handleWorkoutComplete:", error);
-      } finally {
-        // Always reset the loading state
-        setIsCompletingWorkout(false);
-      }
+      })();
     }, [
       latestSession,
       user?.id,
@@ -390,7 +398,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       fetchHistory,
       setUserProfile,
       resetNotificationFlags,
-      userProfile?.location,
       onStartTimer,
     ]);
 

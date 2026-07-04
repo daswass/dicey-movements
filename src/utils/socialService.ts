@@ -2,7 +2,10 @@ import { FriendActivity, LeaderboardEntry, UserProfile } from "../types/social";
 import { api } from "./api";
 import { supabase } from "./supabaseClient";
 
-export const getUserLocation = async (): Promise<{
+export const getUserLocation = async (options?: {
+  /** When true, bypass cached position and request a new GPS fix. */
+  fresh?: boolean;
+}): Promise<{
   city: string;
   country: string;
   coordinates: { latitude: number; longitude: number };
@@ -79,9 +82,9 @@ export const getUserLocation = async (): Promise<{
         });
       },
       {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 300000, // 5 minutes
+        enableHighAccuracy: options?.fresh ?? false,
+        timeout: options?.fresh ? 10000 : 8000,
+        maximumAge: options?.fresh ? 0 : 300000,
       }
     );
   });

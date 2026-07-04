@@ -24,7 +24,7 @@ const UNCLAIMED_COLOR = "#374151";
 export type ZoneCaptainRelation = "self" | "friend" | "other";
 
 export const ZONE_RELATION_COLORS: Record<ZoneCaptainRelation, string> = {
-  self: "#10B981",
+  self: "#15803d",
   friend: "#3B82F6",
   other: "#EF4444",
 };
@@ -329,12 +329,21 @@ export async function checkDiceHeist(
   };
 }
 
+export function buildZoneFromLocation(location?: {
+  coordinates?: { latitude: number; longitude: number };
+  city?: string;
+}): { zoneId: string | null; zoneInfo: ZoneInfo | null } {
+  const coords = location?.coordinates;
+  if (!coords || (coords.latitude === 0 && coords.longitude === 0)) {
+    return { zoneId: null, zoneInfo: null };
+  }
+
+  const zoneInfo = getZoneFromCoordinates(coords.latitude, coords.longitude, location?.city);
+  return { zoneId: zoneInfo.id, zoneInfo };
+}
+
 export function buildZoneIdFromProfile(
   location?: { coordinates?: { latitude: number; longitude: number }; city?: string }
 ): string | null {
-  const coords = location?.coordinates;
-  if (!coords || (coords.latitude === 0 && coords.longitude === 0)) {
-    return null;
-  }
-  return getZoneFromCoordinates(coords.latitude, coords.longitude, location?.city).id;
+  return buildZoneFromLocation(location).zoneId;
 }
