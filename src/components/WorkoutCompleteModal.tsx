@@ -78,7 +78,7 @@ export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heis
             <div className="text-6xl mb-3 animate-bounce">🎲</div>
             <h2 className="text-3xl font-bold text-yellow-400 mb-2 tracking-wide">DICE HEIST!</h2>
             <p className="text-lg text-gray-200 mb-1">That's like you — and then some!</p>
-            <p className="text-sm text-gray-400 mb-5">You just seized the zone. Crown secured.</p>
+            <p className="text-sm text-gray-400 mb-5">You just seized the zone. Sheister secured.</p>
 
             <div className="bg-gray-800/80 rounded-xl p-4 border border-gray-600">
               <div className="flex items-center justify-center gap-2 text-blue-400 mb-2">
@@ -87,7 +87,7 @@ export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heis
               </div>
               {heist!.previousCaptain && (
                 <p className="text-sm text-gray-400">
-                  Dethroned{" "}
+                  Out-sheistered{" "}
                   <span className="text-red-400 font-medium">{heist!.previousCaptain}</span>
                 </p>
               )}
@@ -95,7 +95,7 @@ export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heis
                 <Crown size={22} className="text-yellow-500" />
                 {heist!.totalReps} reps this week
               </p>
-              <p className="text-xs text-yellow-500 mt-1 uppercase tracking-widest">Zone Captain</p>
+              <p className="text-xs text-yellow-500 mt-1 uppercase tracking-widest">Zone Sheister</p>
             </div>
           </>
         ) : (

@@ -105,7 +105,7 @@ const ClaimedZoneCircle: React.FC<ClaimedZoneCircleProps> = ({
             <div className="font-semibold">{zone.displayName}</div>
             <div className="flex items-center gap-1">
               <Crown size={12} className="text-yellow-500" />
-              {captain.captainUsername} ({captain.totalReps} reps)
+              Sheister: {captain.captainUsername} ({captain.totalReps} reps)
             </div>
           </div>
         </Tooltip>
@@ -330,14 +330,14 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 if (captain?.captainUserId === userProfile?.id) {
                   return (
                     <p className="text-yellow-400 mt-2 flex items-center gap-1">
-                      <Crown size={16} /> You're the Zone Captain! ({captain.totalReps} reps)
+                      <Crown size={16} /> You're the Zone Sheister! ({captain.totalReps} reps)
                     </p>
                   );
                 }
                 if (captain) {
                   return (
                     <p className="text-gray-400 mt-2">
-                      Captain: <span className="text-white">{captain.captainUsername}</span> (
+                      Sheister: <span className="text-white">{captain.captainUsername}</span> (
                       {captain.totalReps} reps)
                     </p>
                   );

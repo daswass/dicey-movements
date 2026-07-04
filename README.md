@@ -16,8 +16,8 @@ A fitness PWA that combines dice-rolled workouts with timers, social competition
 
 - **Zone map** — Claimed zones appear on an interactive map (`/map`, nav: **Heists**)
 - **~2 km grid zones** — Each completed set is tagged to the zone where you are when you finish it
-- **Zone Captain** — Most reps in a zone over the rolling last 7 days
-- **Dice Heist** — Overtake a zone captain for a celebratory modal with confetti
+- **Zone Sheister** — Most reps in a zone over the rolling last 7 days
+- **Dice Heist** — Overtake a zone sheister for a celebratory modal with confetti
 - **Map colors** — Green = your zones, blue = friend zones, red = everyone else
 - **Fresh GPS** — Location is resolved in the background on each set completion so reps credit the right zone
 
@@ -114,7 +114,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 Zones are geographic grid cells (~2 km) derived from GPS at set completion time.
 
 - Each `activities` row stores a `zone_id`
-- Captain standings use a rolling 7-day window
+- Sheister standings use a rolling 7-day window
 - The Heists map shows only claimed zones as soft gradient circles
 - Profile location updates in the background after each set for map accuracy
 
