@@ -11,20 +11,6 @@ const Auth: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [view, setView] = useState<"login" | "signup">("login");
-  const [user, setUser] = useState<any>(null);
-
-  // Listen for auth changes
-  React.useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event: string, session: { user: any } | null) => {
-        setUser(session?.user ?? null);
-      }
-    );
-    supabase.auth.getUser().then(({ data }: { data: { user: any } }) => setUser(data.user));
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, []);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +18,6 @@ const Auth: React.FC = () => {
     setError(null);
     setMessage(null);
 
-    // Create the auth user
     const { error: signUpError, data } = await supabase.auth.signUp({
       email,
       password,
@@ -69,37 +54,12 @@ const Auth: React.FC = () => {
     setLoading(true);
     setError(null);
     setMessage(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+    if (loginError) {
+      setError(loginError.message);
     }
     setLoading(false);
   };
-
-  const handleLogout = async () => {
-    setLoading(true);
-    await supabase.auth.signOut();
-    setLoading(false);
-  };
-
-  if (user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
-        <div className="max-w-md w-full p-8 bg-gray-800 rounded-xl shadow-lg">
-          <div className="mb-6 text-center">
-            <h2 className="text-2xl font-bold text-white mb-2">Welcome back!</h2>
-            <p className="text-gray-300">{user.email}</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200 font-medium"
-            disabled={loading}>
-            {loading ? "Logging out..." : "Logout"}
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">

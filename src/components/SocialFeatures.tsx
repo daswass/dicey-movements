@@ -1,21 +1,22 @@
 import { Trophy, Users } from "lucide-react";
-import React, { useState } from "react";
-import { UserProfile } from "../types/social";
-import { Split } from "../types";
-import { FriendActivity } from "./FriendActivity";
-import { Leaderboard } from "./Leaderboard";
+import { lazy, Suspense, useState } from "react";
 
-interface SocialFeaturesProps {
-  userProfile: UserProfile;
-  selectedSplit: Split;
-  onSplitChange: (splitId: string) => void;
+const Leaderboard = lazy(() =>
+  import("./Leaderboard").then((module) => ({ default: module.Leaderboard }))
+);
+const FriendActivity = lazy(() =>
+  import("./FriendActivity").then((module) => ({ default: module.FriendActivity }))
+);
+
+function TabLoading() {
+  return (
+    <div className="flex justify-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+      Loading...
+    </div>
+  );
 }
 
-const SocialFeatures: React.FC<SocialFeaturesProps> = ({
-  userProfile,
-  selectedSplit,
-  onSplitChange,
-}) => {
+const SocialFeatures = () => {
   const [activeTab, setActiveTab] = useState<"leaderboard" | "friends">("leaderboard");
 
   return (
@@ -43,13 +44,16 @@ const SocialFeatures: React.FC<SocialFeaturesProps> = ({
         </button>
       </div>
 
-      {/* Always render all components but control visibility */}
-      <div className={`${activeTab === "leaderboard" ? "block" : "hidden"}`}>
-        <Leaderboard />
-      </div>
-      <div className={`${activeTab === "friends" ? "block" : "hidden"}`}>
-        <FriendActivity />
-      </div>
+      {activeTab === "leaderboard" && (
+        <Suspense fallback={<TabLoading />}>
+          <Leaderboard />
+        </Suspense>
+      )}
+      {activeTab === "friends" && (
+        <Suspense fallback={<TabLoading />}>
+          <FriendActivity />
+        </Suspense>
+      )}
     </div>
   );
 };

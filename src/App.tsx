@@ -1,30 +1,37 @@
-import { Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense, type Dispatch, type SetStateAction } from "react";
 import { Link, Route, BrowserRouter as Router, Routes, useLocation } from "react-router-dom";
+import AppNav from "./components/AppNav";
 import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
-import { FriendActivity } from "./components/FriendActivity";
-import { Friends } from "./components/Friends";
 import { HighFiveEffect } from "./components/HighFiveEffect";
 import { HighFiveNotification } from "./components/HighFiveNotification";
-import OuraCallback from "./components/OuraCallback";
-import PrivacyPolicy from "./components/PrivacyPolicy";
-import TermsOfService from "./components/TermsOfService";
-import TimerHeader from "./components/TimerHeader";
-import ZoneMap from "./components/ZoneMap";
+import { useAuth } from "./contexts/AuthContext";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
-import { UserProfile } from "./types/social";
 import { activitySyncService } from "./utils/activitySyncService";
 import { notificationService } from "./utils/notificationService";
 import {
   fetchPendingFriendRequests,
-  getUserLocation,
   sendHighFive,
-  updateUserLocation,
 } from "./utils/socialService";
-import { supabase } from "./utils/supabaseClient";
 import { timerSyncService, type TimerState } from "./utils/timerSyncService";
+
+const Friends = lazy(() => import("./components/Friends").then((m) => ({ default: m.Friends })));
+const FriendActivity = lazy(() =>
+  import("./components/FriendActivity").then((m) => ({ default: m.FriendActivity }))
+);
+const ZoneMap = lazy(() => import("./components/ZoneMap"));
+const OuraCallback = lazy(() => import("./components/OuraCallback"));
+const PrivacyPolicy = lazy(() => import("./components/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("./components/TermsOfService"));
+
+function RouteLoading() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" />
+    </div>
+  );
+}
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
@@ -65,13 +72,11 @@ function RouteAwareFriendEffects({
 }
 
 function App() {
-  const [session, setSession] = useState<Session | null>(null);
+  const { session, userProfile, loading: loadingProfile, setUserProfile, signOut } = useAuth();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [timerComplete, setTimerComplete] = useState(false);
   const [currentWorkoutComplete, setCurrentWorkoutComplete] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [dayOfWeek, setDayOfWeek] = useState<string>("");
-  const [loadingProfile, setLoadingProfile] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu open/close
   const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
@@ -85,8 +90,6 @@ function App() {
     }>
   >([]);
 
-  // Add ref to track if we've already fetched the profile for the current user
-  const lastFetchedUserIdRef = useRef<string | null>(null);
   // Add ref to track if we've already sent a notification for this timer completion
   const notificationSentRef = useRef(false);
 
@@ -144,35 +147,6 @@ function App() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        fetchUserProfile(session.user.id, session);
-      } else {
-        setLoadingProfile(false);
-      }
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        // Only fetch if the user ID has actually changed
-        if (lastFetchedUserIdRef.current !== session.user.id) {
-          fetchUserProfile(session.user.id, session);
-        }
-      } else {
-        setLoadingProfile(false);
-        // Reset the ref when user logs out
-        lastFetchedUserIdRef.current = null;
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   // Initialize notification service
@@ -309,65 +283,6 @@ function App() {
       sessionStorage.setItem("openedFromNotification", "true");
     }
   }, [setTimerComplete, setCurrentWorkoutComplete, stopWorkerTimer, setTimeLeft, setIsTimerActive]);
-
-  const fetchUserProfile = async (userId: string, currentSession: Session | null) => {
-    // Prevent refetching if we already have the profile for this user
-    if (lastFetchedUserIdRef.current === userId) {
-      return;
-    }
-
-    setLoadingProfile(true);
-    try {
-      let { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
-
-      if (error && error.code === "PGRST116") {
-        console.log("App.tsx: No profile found, attempting to create one.");
-        const location = await getUserLocation();
-        const { data: newProfile, error: createError } = await supabase
-          .from("profiles")
-          .insert({
-            id: userId,
-            username: currentSession?.user?.email?.split("@")[0],
-            location,
-          })
-          .select("*")
-          .single();
-
-        if (newProfile && !createError) {
-          setUserProfile({ ...newProfile, timer_duration: newProfile.timer_duration || 300 });
-          lastFetchedUserIdRef.current = userId;
-          console.log(`App.tsx: Created and set new userProfile: ${JSON.stringify(newProfile)}`);
-        } else {
-          console.error("App.tsx: Error creating new profile:", createError);
-          setUserProfile(null);
-        }
-      } else if (error) {
-        console.error("App.tsx: Error fetching user profile:", error);
-        setUserProfile(null);
-      } else if (data) {
-        // Update location on every login
-        try {
-          const updatedProfile = await updateUserLocation();
-          setUserProfile({
-            ...updatedProfile,
-            timer_duration: updatedProfile.timer_duration || 300,
-          });
-          lastFetchedUserIdRef.current = userId;
-          //console.log(`App.tsx: Updated location and set userProfile: ${JSON.stringify(updatedProfile)}`);
-        } catch (locationError) {
-          console.error("App.tsx: Error updating location:", locationError);
-          // Still set the profile even if location update fails
-          setUserProfile({ ...data, timer_duration: data.timer_duration || 300 });
-          lastFetchedUserIdRef.current = userId;
-        }
-      }
-    } catch (e) {
-      console.error("App.tsx: Exception fetching/creating profile:", e);
-      setUserProfile(null);
-    } finally {
-      setLoadingProfile(false);
-    }
-  };
 
   useEffect(() => {
     if (userProfile) {
@@ -756,164 +671,17 @@ function App() {
         setShowFriendRequestNotification={setShowFriendRequestNotification}
       />
       <div className="min-h-screen bg-gray-900 text-white">
-        {/* Fixed Header Navigation */}
-        {/* Moved padding to nav itself */}
-        <nav className="bg-gray-800 shadow-lg fixed w-full z-50 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-7xl mx-auto">
-            {" "}
-            {/* This div is now just for max-width and centering */}
-            <div className="flex items-center justify-between h-16">
-              {/* Logo/Title (Left Section) */}
-              <h1 className="text-2xl font-bold flex items-center gap-2 flex-shrink-0">
-                <span className="text-blue-600 dark:text-blue-400">Dicey</span>
-                <span className="text-red-500 dark:text-red-400">Movements</span>
-              </h1>
-
-              {/* Desktop Navigation Links (Middle Section - Hidden on mobile) */}
-              <div className="hidden md:flex flex-grow justify-center space-x-8">
-                <Link to="/" className="nav-link">
-                  Game
-                </Link>
-                {userProfile && showTimerHeader && (
-                  <TimerHeader isActive={isTimerActive} timeLeft={timeLeft} />
-                )}
-                <Link to="/friends" className="nav-link">
-                  Friends
-                  {pendingFriendRequests > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
-                      {pendingFriendRequests}
-                    </span>
-                  )}
-                </Link>
-                <Link to="/activity" className="nav-link">
-                  Activity
-                </Link>
-                <Link to="/map" className="nav-link">
-                  Heists
-                </Link>
-              </div>
-
-              {/* User Info & Sign Out (Right Section - Hidden on mobile) */}
-              <div className="hidden md:flex items-center space-x-4 flex-shrink-0">
-                <span className="text-sm font-medium text-gray-200">
-                  Hey {userProfile?.first_name}!
-                </span>
-                <button onClick={() => supabase.auth.signOut()} className="btn-secondary">
-                  Sign Out
-                </button>
-              </div>
-
-              {/* Mobile Menu Button (Hamburger - Visible on mobile) */}
-              <div className="-mr-2 flex md:hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
-                  aria-controls="mobile-menu"
-                  aria-expanded="false">
-                  <span className="sr-only">Open main menu</span>
-                  {/* Hamburger icon */}
-                  {!isMenuOpen ? (
-                    <svg
-                      className="block h-6 w-6"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      aria-hidden="true">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                  ) : (
-                    <svg
-                      className="block h-6 w-6"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      aria-hidden="true">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile Menu (Collapsible) */}
-          {isMenuOpen && (
-            <div className="md:hidden" id="mobile-menu">
-              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-                <Link to="/" className="mobile-nav-link" onClick={() => setIsMenuOpen(false)}>
-                  Game
-                </Link>
-                {userProfile && showTimerHeader && (
-                  <div className="px-3 py-2 text-sm font-medium text-gray-200">
-                    <TimerHeader isActive={isTimerActive} timeLeft={timeLeft} />
-                  </div>
-                )}
-                <Link
-                  to="/friends"
-                  className="mobile-nav-link"
-                  onClick={() => setIsMenuOpen(false)}>
-                  Friends
-                  {pendingFriendRequests > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
-                      {pendingFriendRequests}
-                    </span>
-                  )}
-                </Link>
-                <Link
-                  to="/activity"
-                  className="mobile-nav-link"
-                  onClick={() => setIsMenuOpen(false)}>
-                  Activity
-                </Link>
-                <Link to="/map" className="mobile-nav-link" onClick={() => setIsMenuOpen(false)}>
-                  Heists
-                </Link>
-              </div>
-              <div className="pt-4 pb-3 border-t border-gray-700">
-                <div className="flex items-center px-5">
-                  <div className="flex-shrink-0">
-                    {/* Placeholder User Avatar */}
-                    <svg
-                      className="h-8 w-8 rounded-full text-gray-300"
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <div className="text-base font-medium leading-none text-white">
-                      {userProfile?.first_name}
-                    </div>
-                    <div className="text-sm font-medium leading-none text-gray-400">
-                      {session?.user?.email}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 px-2 space-y-1">
-                  <button
-                    onClick={() => {
-                      supabase.auth.signOut();
-                      setIsMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-400 hover:text-white hover:bg-gray-700">
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </nav>
+        <AppNav
+          userProfile={userProfile}
+          sessionEmail={session?.user?.email}
+          showTimerHeader={showTimerHeader}
+          isTimerActive={isTimerActive}
+          timeLeft={timeLeft}
+          pendingFriendRequests={pendingFriendRequests}
+          isMenuOpen={isMenuOpen}
+          setIsMenuOpen={setIsMenuOpen}
+          onSignOut={signOut}
+        />
 
         {/* Spacer div to push content below fixed header */}
         <div className="h-16"></div>
@@ -957,34 +725,36 @@ function App() {
         ))}
 
         {settings ? (
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Dashboard
-                  key={userProfile?.id || "loading"}
-                  timerComplete={timerComplete}
-                  setTimerComplete={setTimerComplete}
-                  currentWorkoutComplete={currentWorkoutComplete}
-                  setCurrentWorkoutComplete={setCurrentWorkoutComplete}
-                  onStartTimer={handleStartTimer}
-                  onResetTimerToDuration={resetTimerWorkerToDuration}
-                  userProfile={userProfile}
-                  setUserProfile={setUserProfile}
-                  resetNotificationFlags={resetNotificationFlags}
-                />
-              }
-            />
-            <Route
-              path="/friends"
-              element={<Friends onFriendRequestUpdate={refreshPendingFriendRequests} />}
-            />
-            <Route path="/activity" element={<FriendActivity />} />
-            <Route path="/map" element={<ZoneMap userProfile={userProfile} />} />
-            <Route path="/oura/callback" element={<OuraCallback />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms-of-service" element={<TermsOfService />} />
-          </Routes>
+          <Suspense fallback={<RouteLoading />}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <Dashboard
+                    key={userProfile?.id || "loading"}
+                    timerComplete={timerComplete}
+                    setTimerComplete={setTimerComplete}
+                    currentWorkoutComplete={currentWorkoutComplete}
+                    setCurrentWorkoutComplete={setCurrentWorkoutComplete}
+                    onStartTimer={handleStartTimer}
+                    onResetTimerToDuration={resetTimerWorkerToDuration}
+                    userProfile={userProfile}
+                    setUserProfile={setUserProfile}
+                    resetNotificationFlags={resetNotificationFlags}
+                  />
+                }
+              />
+              <Route
+                path="/friends"
+                element={<Friends onFriendRequestUpdate={refreshPendingFriendRequests} />}
+              />
+              <Route path="/activity" element={<FriendActivity />} />
+              <Route path="/map" element={<ZoneMap userProfile={userProfile} />} />
+              <Route path="/oura/callback" element={<OuraCallback />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/terms-of-service" element={<TermsOfService />} />
+            </Routes>
+          </Suspense>
         ) : (
           <div className="p-4 text-center text-gray-500">
             <p>An error occurred or settings could not be loaded.</p>

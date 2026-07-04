@@ -195,39 +195,6 @@ app.post("/api/oura/webhook", (req, res) => {
   })();
 });
 
-// Leaderboard routes
-app.get("/api/leaderboard/:location", requireAuth, async (req, res) => {
-  try {
-    const { location } = req.params;
-    const { data, error } = await supabase
-      .from("leaderboard")
-      .select("*")
-      .eq("location", location)
-      .order("score", { ascending: false })
-      .limit(10);
-
-    if (error) throw error;
-    res.json(data);
-  } catch (error) {
-    console.error("Error fetching leaderboard:", error);
-    res.status(500).json({ error: "Failed to fetch leaderboard" });
-  }
-});
-
-// User profile routes
-app.get("/api/profile/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (error) {
-    console.error("Error fetching profile:", error);
-    res.status(500).json({ error: "Failed to fetch profile" });
-  }
-});
-
 // Push Notification Routes
 app.get("/api/push/vapid-public-key", (req, res) => {
   try {

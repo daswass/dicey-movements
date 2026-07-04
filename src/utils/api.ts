@@ -1,7 +1,5 @@
-import { UserProfile, LeaderboardEntry, FriendActivity } from "../types/social";
 import { supabase } from "./supabaseClient";
 
-// API configuration for backend endpoints
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -44,7 +42,6 @@ export const api = {
     return response.json();
   },
 
-  // Health check function to wake up hibernated backend
   async healthCheck(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/api/health`);
@@ -55,7 +52,6 @@ export const api = {
     }
   },
 
-  // Specific API methods
   async getVapidPublicKey() {
     return this.fetch("/api/push/vapid-public-key");
   },
@@ -94,37 +90,4 @@ export const api = {
       body: JSON.stringify({ userId, exercise, reps, multipliers }),
     });
   },
-};
-
-export const fetchLeaderboard = async (location: string): Promise<LeaderboardEntry[]> => {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${BACKEND_URL}/api/leaderboard/${encodeURIComponent(location)}`, {
-    headers: authHeaders,
-  });
-  if (!response.ok) {
-    throw new Error("Failed to fetch leaderboard");
-  }
-  return response.json();
-};
-
-export const fetchUserProfile = async (userId: string): Promise<UserProfile> => {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${BACKEND_URL}/api/profile/${userId}`, {
-    headers: authHeaders,
-  });
-  if (!response.ok) {
-    throw new Error("Failed to fetch user profile");
-  }
-  return response.json();
-};
-
-export const fetchFriendActivities = async (userId: string): Promise<FriendActivity[]> => {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${BACKEND_URL}/api/friends/activity/${userId}`, {
-    headers: authHeaders,
-  });
-  if (!response.ok) {
-    throw new Error("Failed to fetch friend activities");
-  }
-  return response.json();
 };

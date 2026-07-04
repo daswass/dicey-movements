@@ -84,7 +84,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       show: boolean;
       type: "game" | "multipliers" | null;
     }>({ show: false, type: null });
-    const [user, setUser] = useState<any>(null);
+    const userId = userProfile?.id;
     const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
     const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
 
@@ -142,24 +142,12 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       };
     }, []);
 
-    useEffect(() => {
-      const { data: listener } = supabase.auth.onAuthStateChange(
-        (_event: string, session: { user: any } | null) => {
-          setUser(session?.user ?? null);
-        }
-      );
-      supabase.auth.getUser().then(({ data }: { data: { user: any } }) => setUser(data.user));
-      return () => {
-        listener.subscription.unsubscribe();
-      };
-    }, []);
-
     const fetchHistory = useCallback(async () => {
-      if (!user) return;
+      if (!userId) return;
       const { data, error } = await supabase
         .from("activities")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("timestamp", { ascending: false });
 
       if (error) {
@@ -180,11 +168,11 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
       setHistory(data || []);
       setExerciseCounts(currentExerciseCounts);
-    }, [user?.id, lastSessionStart]);
+    }, [userId, lastSessionStart]);
 
     useEffect(() => {
-      if (user) fetchHistory();
-    }, [user?.id, fetchHistory]);
+      if (userId) fetchHistory();
+    }, [userId, fetchHistory]);
 
     // Load user's selected split from profile
     useEffect(() => {
@@ -202,7 +190,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     // Subscribe to activity sync service for real-time workout updates
     useEffect(() => {
-      if (!user) return;
+      if (!userId) return;
 
       const unsubscribe = activitySyncService.subscribe((activity) => {
         // Only sync on non-master devices since master already has the updated data
@@ -212,7 +200,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       });
 
       return unsubscribe;
-    }, [user?.id, fetchHistory, isMaster]);
+    }, [userId, fetchHistory, isMaster]);
 
     const handleTimerComplete = useCallback(() => {
       setTimerComplete(true);
@@ -224,7 +212,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       if (latestSession) {
         try {
           await api.completeWorkout(
-            user!.id,
+            userId,
             latestSession.exercise.name,
             latestSession.reps,
             multipliers
@@ -244,7 +232,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setIsRollAndStartMode(true); // Enable roll and start mode to trigger dice rolling
     }, [
       latestSession,
-      user?.id,
+      userId,
       multipliers,
       fetchHistory,
       setUserProfile,
@@ -253,7 +241,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
     const handleWorkoutComplete = useCallback(async () => {
       if (isCompletingWorkout) return;
-      if (!latestSession || !user) return;
+      if (!latestSession || !userId) return;
 
       setIsCompletingWorkout(true);
 
@@ -304,7 +292,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             supabase
               .from("profiles")
               .update({ location: freshLocation })
-              .eq("id", user.id)
+              .eq("id", userId)
               .then(({ error: locationError }) => {
                 if (locationError) {
                   console.error("Dashboard: Error updating profile location:", locationError);
@@ -314,12 +302,12 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
           let heistResult = null;
           if (zoneId && zoneInfo) {
-            heistResult = await checkDiceHeist(zoneId, user.id, session.reps, zoneInfo);
+            heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
           }
 
           const newActivity = {
             id: crypto.randomUUID(),
-            user_id: user.id,
+            user_id: userId,
             timestamp: new Date().toISOString(),
             exercise_id: session.exercise.id,
             exercise_name: session.exercise.name,
@@ -353,7 +341,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
             const { data: updatedProfile, error: profileError } = await supabase
               .from("profiles")
               .select("*")
-              .eq("id", user.id)
+              .eq("id", userId)
               .single();
 
             if (updatedProfile && !profileError) {
@@ -370,8 +358,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
           try {
             const singleWorkoutAchievements =
-              await AchievementService.checkSingleWorkoutAchievements(user.id, session.reps);
-            const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
+              await AchievementService.checkSingleWorkoutAchievements(userId, session.reps);
+            const generalAchievements = await AchievementService.checkAndUnlockAchievements(userId);
             const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
             if (allNewAchievements.length > 0) {
               setUnlockedAchievements(allNewAchievements);
@@ -382,7 +370,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
           try {
             await api.completeWorkout(
-              user.id,
+              userId,
               session.exercise.name,
               session.reps,
               multipliers
@@ -397,7 +385,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     }, [
       isCompletingWorkout,
       latestSession,
-      user?.id,
+      userId,
       multipliers,
       fetchHistory,
       setUserProfile,
@@ -406,20 +394,20 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     ]);
 
     const fetchLastSessionStart = useCallback(async () => {
-      if (!user) return;
+      if (!userId) return;
       const { data, error } = await supabase
         .from("profiles")
         .select("last_session_start")
-        .eq("id", user.id)
+        .eq("id", userId)
         .single();
       if (!error && data) {
         setLastSessionStart(data.last_session_start ? new Date(data.last_session_start) : null);
       }
-    }, [user?.id]);
+    }, [userId]);
 
     useEffect(() => {
-      if (user) fetchLastSessionStart();
-    }, [user?.id, fetchLastSessionStart]);
+      if (userId) fetchLastSessionStart();
+    }, [userId, fetchLastSessionStart]);
 
     const resetAll = useCallback(async () => {
       console.log("Dashboard: Resetting all game state.");
@@ -455,7 +443,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           timer_start_time: null,
           timer_last_updated: new Date().toISOString(),
         })
-        .eq("id", user.id);
+        .eq("id", userId);
       if (!error) {
         await fetchLastSessionStart();
         await fetchHistory();
@@ -463,7 +451,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         console.error("Dashboard: Error updating last_session_start:", error);
       }
     }, [
-      user?.id,
+      userId,
       userProfile?.timer_duration,
       onResetTimerToDuration,
       fetchLastSessionStart,
@@ -494,7 +482,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           return;
         }
 
-        if (user && lastSessionStart) {
+        if (userId && lastSessionStart) {
           const today = new Date();
           const lastSessionDate = new Date(
             lastSessionStart.getFullYear(),
@@ -515,7 +503,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       return () => {
         clearInterval(intervalId);
       };
-    }, [user?.id, lastSessionStart, resetAll]);
+    }, [userId, lastSessionStart, resetAll]);
 
     // Helper functions for Stats Panel (use history & lastSessionStart from DB)
     const getTotalSetsToday = useCallback(() => {
@@ -595,11 +583,11 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const updateNotificationsEnabled = useCallback(
       async (enabled: boolean) => {
         setNotificationsEnabled(enabled);
-        if (user) {
+        if (userId) {
           const { error } = await supabase
             .from("profiles")
             .update({ notifications_enabled: enabled })
-            .eq("id", user.id);
+            .eq("id", userId);
           if (error) {
             console.error("Dashboard: Error updating notifications_enabled:", error);
           } else {
@@ -607,7 +595,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           }
         }
       },
-      [user?.id, setUserProfile]
+      [userId, setUserProfile]
     );
 
     const updateTimerDuration = useCallback(
@@ -629,17 +617,17 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         }
 
         // Update database in the background
-        if (user) {
+        if (userId) {
           const { error } = await supabase
             .from("profiles")
             .update({ timer_duration: newDuration })
-            .eq("id", user.id);
+            .eq("id", userId);
           if (error) {
             console.error("Dashboard: Error updating timer_duration in DB:", error);
           }
         }
       },
-      [user?.id, onResetTimerToDuration, setUserProfile]
+      [userId, onResetTimerToDuration, setUserProfile]
     );
 
     const handleSplitChange = useCallback(
@@ -654,12 +642,12 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         setUserProfile((prev) => (prev ? { ...prev, user_split_id: newSplitId } : null));
 
         // Save to database
-        if (user) {
+        if (userId) {
           try {
             const { error } = await supabase
               .from("profiles")
               .update({ user_split_id: newSplitId })
-              .eq("id", user.id);
+              .eq("id", userId);
 
             if (error) {
               console.error("Error updating user split:", error);
@@ -671,7 +659,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           }
         }
       },
-      [setUserProfile, user]
+      [setUserProfile, userId]
     );
 
     const handleExerciseClick = useCallback((exercise: Exercise) => {
@@ -837,7 +825,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     }, [latestSession, handleWorkoutComplete]);
 
     // Early return after all hooks
-    if (!user) {
+    if (!userId) {
       return null;
     }
 
@@ -852,16 +840,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           </div>
 
           <div className="col-span-1 space-y-6">
-            {(() => {
-              return null;
-            })()}
-            {stableUserProfile && (
-              <SocialFeatures
-                userProfile={stableUserProfile}
-                selectedSplit={selectedSplit}
-                onSplitChange={handleSplitChange}
-              />
-            )}
+            <SocialFeatures />
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
               <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center space-x-3">
