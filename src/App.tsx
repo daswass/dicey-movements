@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, lazy, Suspense, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, lazy, Suspense, type Dispatch, type SetStateAction } from "react";
 import { Link, Route, BrowserRouter as Router, Routes, useLocation } from "react-router-dom";
 import AppNav from "./components/AppNav";
 import Auth from "./components/Auth";
@@ -6,6 +6,7 @@ import Dashboard from "./components/Dashboard";
 import { HighFiveEffect } from "./components/HighFiveEffect";
 import { HighFiveNotification } from "./components/HighFiveNotification";
 import { useAuth } from "./contexts/AuthContext";
+import { useTimerNotifications } from "./hooks/useTimerNotifications";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { activitySyncService } from "./utils/activitySyncService";
@@ -32,8 +33,6 @@ function RouteLoading() {
     </div>
   );
 }
-
-const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
 
 function RouteAwareFriendEffects({
   userProfileId,
@@ -77,8 +76,7 @@ function App() {
   const [timerComplete, setTimerComplete] = useState(false);
   const [currentWorkoutComplete, setCurrentWorkoutComplete] = useState(false);
   const [dayOfWeek, setDayOfWeek] = useState<string>("");
-  const [isMenuOpen, setIsMenuOpen] = useState(false); // State for mobile menu open/close
-  const [isTitleFlashing, setIsTitleFlashing] = useState(false); // State for title flashing
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
   const [showFriendRequestNotification, setShowFriendRequestNotification] = useState(false);
   const [showHighFiveEffect, setShowHighFiveEffect] = useState(false);
@@ -90,9 +88,6 @@ function App() {
     }>
   >([]);
 
-  // Add ref to track if we've already sent a notification for this timer completion
-  const notificationSentRef = useRef(false);
-
   const {
     isTimerActive,
     setIsTimerActive,
@@ -100,19 +95,17 @@ function App() {
     setTimeLeft,
     startTimer: startWorkerTimer,
     stopTimer: stopWorkerTimer,
-    pauseTimer: pauseWorkerTimer,
-    resumeTimer: resumeWorkerTimer,
     resetTimerToDuration: resetTimerWorkerToDuration,
   } = useTimerWorker();
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Preload the audio element
-  useEffect(() => {
-    audioRef.current = new Audio(TIMER_SOUND_PATH);
-    audioRef.current.preload = "auto";
-    audioRef.current.load();
-  }, []);
+  const { notificationSentRef, resetNotificationFlags } = useTimerNotifications({
+    timerComplete,
+    setTimerComplete,
+    isTimerActive,
+    timeLeft,
+    setIsTimerActive,
+    setCurrentWorkoutComplete,
+  });
 
   const getDayOfWeek = () => {
     const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
@@ -160,12 +153,6 @@ function App() {
     };
 
     initializeNotifications();
-  }, []);
-
-  // Reset notification flags for new timer sessions
-  const resetNotificationFlags = useCallback(() => {
-    notificationSentRef.current = false;
-    console.log("App.tsx: Notification flags reset");
   }, []);
 
   // Listen for timer completion from notification clicks
@@ -369,220 +356,6 @@ function App() {
     // Start timer sync as master
     timerSyncService.startTimerSync(duration);
   }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive, setTimeLeft]);
-
-  const playSound = useCallback(() => {
-    if (audioRef.current) {
-      // Reset the audio to the beginning
-      audioRef.current.currentTime = 0;
-
-      // Play the audio
-      audioRef.current.play().catch((error) => {
-        console.error("App.tsx: Error playing sound:", error);
-        // If there's an error, try creating a new audio element
-        const newAudio = new Audio(TIMER_SOUND_PATH);
-        newAudio.play().catch((newError) => {
-          console.error("App.tsx: Error playing sound with new audio element:", newError);
-        });
-      });
-    } else {
-      // Fallback if audioRef is not available
-      const audio = new Audio(TIMER_SOUND_PATH);
-      audio.play().catch((error) => {
-        console.error("App.tsx: Error playing sound (fallback):", error);
-      });
-    }
-  }, []);
-
-  const showNotification = useCallback(async (title: string, body: string) => {
-    try {
-      await notificationService.sendLocalNotification(title, body);
-    } catch (error) {
-      console.error("App.tsx: Error showing notification:", error);
-
-      // Fallback to old notification method
-      if (!("Notification" in window)) {
-        console.warn("App.tsx: This browser does not support desktop notification");
-        return;
-      }
-
-      console.log("Current Notification.permission status:", Notification.permission);
-
-      if (Notification.permission === "granted") {
-        new Notification(title, {
-          body,
-          icon: "/favicon.svg",
-          requireInteraction: true,
-          silent: false,
-          tag: "timer-notification",
-        });
-      } else if (Notification.permission !== "denied") {
-        Notification.requestPermission().then((permission) => {
-          if (permission === "granted") {
-            new Notification(title, {
-              body,
-              icon: "/favicon.svg",
-              requireInteraction: true,
-              silent: false,
-              tag: "timer-notification",
-            });
-          }
-        });
-      }
-    }
-  }, []);
-
-  // Enhanced notification system with multiple attention-grabbing features
-  const notifyTimerExpired = useCallback(async () => {
-    // Check if we're handling a notification to prevent duplicate notifications
-    const openedFromNotification = sessionStorage.getItem("openedFromNotification") === "true";
-    const urlParams = new URLSearchParams(window.location.search);
-    const isFromNotificationUrl = urlParams.get("timerComplete") === "true";
-
-    if (openedFromNotification || isFromNotificationUrl) {
-      console.log("App.tsx: Skipping notification - handling existing notification");
-      return;
-    }
-
-    // Only send notification if this device is the master
-    if (!timerSyncService.isDeviceMasterSync()) {
-      console.log("App.tsx: Not master device, skipping notification");
-      return;
-    }
-
-    // 1. Play sound
-    playSound();
-
-    // 2. Show push notification (works even when app is in background)
-    try {
-      await notificationService.sendTimerExpiredNotification();
-    } catch (error) {
-      console.error("App.tsx: Error sending push notification:", error);
-
-      // Fallback to desktop notification if tab is hidden
-      if (document.hidden) {
-        await showNotification(
-          "⏰ Timer Expired!",
-          "Your workout timer has finished! Time to get movin'!"
-        );
-      }
-    }
-
-    // 3. Start title flashing
-    setIsTitleFlashing(true);
-
-    // 4. Try to focus the window/tab (may not work due to browser security)
-    if (document.hidden) {
-      window.focus();
-    }
-
-    // 5. Add visual feedback to the page
-    document.body.classList.add("timer-expired-flash");
-
-    // Stop the flashing after 10 seconds
-    setTimeout(() => {
-      setIsTitleFlashing(false);
-      document.body.classList.remove("timer-expired-flash");
-    }, 10000);
-  }, [playSound, showNotification]);
-
-  // Function to stop timer notifications
-  const stopTimerNotifications = useCallback(() => {
-    setIsTitleFlashing(false);
-    document.body.classList.remove("timer-expired-flash");
-  }, []);
-
-  // Stop notifications when user interacts with the page
-  useEffect(() => {
-    let interactionTimeout: NodeJS.Timeout | null = null;
-
-    const handleUserInteraction = () => {
-      if (isTitleFlashing) {
-        stopTimerNotifications();
-      }
-
-      // Transfer master control if user interacts with timer on slave device
-      if (isTimerActive && !timerSyncService.isDeviceMasterSync()) {
-        // Debounce the master transition to prevent rapid successive calls
-        if (interactionTimeout) {
-          clearTimeout(interactionTimeout);
-        }
-
-        interactionTimeout = setTimeout(() => {
-          timerSyncService.becomeMaster();
-        }, 100); // 100ms debounce
-      }
-    };
-
-    // Listen for various user interactions
-    document.addEventListener("click", handleUserInteraction);
-    document.addEventListener("keydown", handleUserInteraction);
-    document.addEventListener("touchstart", handleUserInteraction);
-    document.addEventListener("scroll", handleUserInteraction);
-
-    return () => {
-      if (interactionTimeout) {
-        clearTimeout(interactionTimeout);
-      }
-      document.removeEventListener("click", handleUserInteraction);
-      document.removeEventListener("keydown", handleUserInteraction);
-      document.removeEventListener("touchstart", handleUserInteraction);
-      document.removeEventListener("scroll", handleUserInteraction);
-    };
-  }, [isTitleFlashing, stopTimerNotifications, isTimerActive]);
-
-  // Handle title flashing
-  useEffect(() => {
-    if (isTitleFlashing) {
-      const interval = setInterval(() => {
-        document.title =
-          document.title === "⏰ TIMER EXPIRED! ⏰" ? "Dicey Movements" : "⏰ TIMER EXPIRED! ⏰";
-      }, 1000);
-
-      return () => {
-        clearInterval(interval);
-        document.title = "Dicey Movements"; // Reset title when component unmounts
-      };
-    } else {
-      document.title = "Dicey Movements";
-    }
-  }, [isTitleFlashing]);
-
-  useEffect(() => {
-    if (timeLeft === 0 && isTimerActive && !timerComplete) {
-      console.log("App.tsx: Timer completed - setting timerComplete to true");
-      setTimerComplete(true);
-      setIsTimerActive(false);
-      setCurrentWorkoutComplete(false);
-      // Reset notification sent flag for new timer completion
-      notificationSentRef.current = false;
-    }
-  }, [timeLeft, isTimerActive, timerComplete]);
-
-  useEffect(() => {
-    if (timerComplete && !notificationSentRef.current) {
-      console.log("App.tsx: Timer has completed! Playing sound and checking for notification.");
-      console.log("App.tsx: notificationSentRef.current was:", notificationSentRef.current);
-
-      // Check if timer completion came from a notification click
-      const openedFromNotification = sessionStorage.getItem("openedFromNotification");
-      if (openedFromNotification === "true") {
-        console.log(
-          "App.tsx: Timer completion came from notification click, skipping notification send"
-        );
-
-        sessionStorage.removeItem("openedFromNotification");
-        notificationSentRef.current = true;
-
-        return;
-      }
-
-      notificationSentRef.current = true; // Mark notification as sent
-      console.log("App.tsx: notificationSentRef.current set to:", notificationSentRef.current);
-      notifyTimerExpired();
-    } else if (timerComplete && notificationSentRef.current) {
-      console.log("App.tsx: Timer completed but notification already sent, skipping");
-    }
-  }, [timerComplete, notifyTimerExpired]);
 
   // Cleanup timer sync when component unmounts
   useEffect(() => {

@@ -1,25 +1,20 @@
-import { Settings, Dumbbell } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getExerciseById, getSplitById, getDefaultSplit, splits } from "../data/exercises";
+import { getExerciseById, getSplitById, getDefaultSplit } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession, Split, Exercise } from "../types";
 import { UserProfile } from "../types/social";
-import { AchievementService } from "../utils/achievementService";
-import { activitySyncService } from "../utils/activitySyncService";
+import { useTimerMasterStatus } from "../hooks/useTimerMasterStatus";
+import { useWorkoutComplete } from "../hooks/useWorkoutComplete";
+import { useWorkoutHistory } from "../hooks/useWorkoutHistory";
 import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
-import { getUserLocation } from "../utils/socialService";
-import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
-import { timerSyncService } from "../utils/timerSyncService";
-import { buildZoneFromLocation, checkDiceHeist } from "../utils/zoneService";
+import { supabase } from "../utils/supabaseClient";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
-import DiceRoller from "./DiceRoller";
-import ExerciseDisplay from "./ExerciseDisplay";
 import ExerciseInstructionsModal from "./ExerciseInstructionsModal";
 import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
-import Timer from "./Timer";
+import WorkoutFlow from "./WorkoutFlow";
 import {
   WorkoutCompleteHeistInfo,
   WorkoutCompleteModal,
@@ -37,17 +32,6 @@ interface DashboardProps {
   resetNotificationFlags: () => void;
 }
 
-interface Activity {
-  id: string;
-  user_id: string;
-  timestamp: string;
-  exercise_id: number;
-  exercise_name: string;
-  reps: number;
-  multiplier: number; // This multiplier is the multiplier *at the time of the activity*
-  dice_roll: any;
-}
-
 const Dashboard: React.FC<DashboardProps> = React.memo(
   ({
     timerComplete,
@@ -60,21 +44,28 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     setUserProfile,
     resetNotificationFlags,
   }) => {
-    const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
+    const userId = userProfile?.id;
+    const isMaster = useTimerMasterStatus();
+    const {
+      history,
+      setHistory,
+      exerciseCounts,
+      lastSessionStart,
+      sessionHistory,
+      stats,
+      fetchHistory,
+      fetchLastSessionStart,
+    } = useWorkoutHistory(userId, isMaster);
 
-    // State for selected split
     const [selectedSplit, setSelectedSplit] = useState<Split>(getDefaultSplit());
-
-    // DERIVED STATE: Multipliers based on exerciseCounts (since last_session_start)
     const multipliers: ExerciseMultipliers = useMemo(() => {
       const calculatedMultipliers: ExerciseMultipliers = {};
       for (let i = 1; i <= 6; i++) {
-        calculatedMultipliers[i] = (exerciseCounts[i] || 0) + 1; // Multiplier is 1 + count
+        calculatedMultipliers[i] = (exerciseCounts[i] || 0) + 1;
       }
       return calculatedMultipliers;
     }, [exerciseCounts]);
 
-    const [history, setHistory] = useState<Activity[]>([]);
     const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [workoutCompleteModal, setWorkoutCompleteModal] = useState<{
@@ -84,123 +75,30 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       show: boolean;
       type: "game" | "multipliers" | null;
     }>({ show: false, type: null });
-    const userId = userProfile?.id;
-    const [lastSessionStart, setLastSessionStart] = useState<Date | null>(null);
     const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
-
-    // Achievement state
     const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
     const [showAchievements, setShowAchievements] = useState(false);
-
-    // Add new state for Roll & Start mode
     const [isRollAndStartMode, setIsRollAndStartMode] = useState(false);
-
-    // Add state for tracking master/slave status
-    const [isMaster, setIsMaster] = useState(false);
-
-    // Add state for tracking workout completion loading
     const [isCompletingWorkout, setIsCompletingWorkout] = useState(false);
-
-    // Exercise instructions modal state
     const [showExerciseModal, setShowExerciseModal] = useState(false);
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
-
-    // Splits panel state for Workout Timer
     const [showSplitsPanel, setShowSplitsPanel] = useState(false);
 
-    // Memoize userProfile to prevent unnecessary re-renders
     const stableUserProfile = useMemo(
       () => userProfile,
       [userProfile?.id, userProfile?.timer_duration, userProfile?.notifications_enabled]
     );
 
-    // Effect to monitor master/slave status
-    useEffect(() => {
-      const checkMasterStatus = async () => {
-        try {
-          const masterStatus = await timerSyncService.isDeviceMaster();
-          setIsMaster(masterStatus);
-        } catch (error) {
-          console.error("Dashboard: Error checking master status:", error);
-        }
-      };
-
-      // Check immediately
-      checkMasterStatus();
-
-      // Subscribe to real-time master status changes
-      const unsubscribe = timerSyncService.onMasterStatusChange((isMaster) => {
-        setIsMaster(isMaster);
-      });
-
-      // Fallback polling (much less frequent since we have real-time)
-      const interval = setInterval(checkMasterStatus, 30000); // 30 seconds
-
-      return () => {
-        unsubscribe();
-        clearInterval(interval);
-      };
-    }, []);
-
-    const fetchHistory = useCallback(async () => {
-      if (!userId) return;
-      const { data, error } = await supabase
-        .from("activities")
-        .select("*")
-        .eq("user_id", userId)
-        .order("timestamp", { ascending: false });
-
-      if (error) {
-        console.error("Dashboard: Error fetching history:", error);
-        return;
-      }
-
-      const currentExerciseCounts: Record<number, number> = {};
-      const currentLastSessionStart = lastSessionStart;
-
-      (data || []).forEach((activity) => {
-        // Only count activity if it happened AFTER the last session start
-        if (!currentLastSessionStart || new Date(activity.timestamp) > currentLastSessionStart) {
-          currentExerciseCounts[activity.exercise_id] =
-            (currentExerciseCounts[activity.exercise_id] || 0) + 1;
-        }
-      });
-
-      setHistory(data || []);
-      setExerciseCounts(currentExerciseCounts);
-    }, [userId, lastSessionStart]);
-
-    useEffect(() => {
-      if (userId) fetchHistory();
-    }, [userId, fetchHistory]);
-
-    // Load user's selected split from profile
     useEffect(() => {
       if (userProfile?.user_split_id) {
         try {
-          const split = getSplitById(userProfile.user_split_id);
-          setSelectedSplit(split);
+          setSelectedSplit(getSplitById(userProfile.user_split_id));
         } catch (error) {
           console.error("Dashboard: Error loading user split:", error);
-          // Fallback to default split
           setSelectedSplit(getDefaultSplit());
         }
       }
     }, [userProfile?.user_split_id]);
-
-    // Subscribe to activity sync service for real-time workout updates
-    useEffect(() => {
-      if (!userId) return;
-
-      const unsubscribe = activitySyncService.subscribe((activity) => {
-        // Only sync on non-master devices since master already has the updated data
-        if (!isMaster) {
-          fetchHistory();
-        }
-      });
-
-      return unsubscribe;
-    }, [userId, fetchHistory, isMaster]);
 
     const handleTimerComplete = useCallback(() => {
       setTimerComplete(true);
@@ -239,175 +137,24 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       resetNotificationFlags,
     ]);
 
-    const handleWorkoutComplete = useCallback(async () => {
-      if (isCompletingWorkout) return;
-      if (!latestSession || !userId) return;
-
-      setIsCompletingWorkout(true);
-
-      const session = latestSession;
-      const currentMultiplier = multipliers[session.exercise.id] || 1;
-      let restartTimerId: ReturnType<typeof setTimeout>;
-
-      const restartWorkout = () => {
-        try {
-          setWorkoutCompleteModal(null);
-          setCurrentWorkoutComplete(false);
-          setTimerComplete(false);
-          sessionStorage.removeItem("openedFromNotification");
-          resetNotificationFlags();
-          onStartTimer();
-          setLatestSession(null);
-          setIsRollAndStartMode(false);
-          console.log("Dashboard: Optimistically restarted timer after workout complete");
-        } finally {
-          setIsCompletingWorkout(false);
-        }
-      };
-
-      const scheduleRestart = (delayMs: number) => {
-        clearTimeout(restartTimerId);
-        restartTimerId = setTimeout(restartWorkout, delayMs);
-      };
-
-      // Show modal and restart timer immediately — don't wait on GPS
-      setWorkoutCompleteModal({});
-      scheduleRestart(2000);
-
-      notificationService.clearAllNotifications().catch((error) => {
-        console.error("Dashboard: Error clearing notifications:", error);
-      });
-      notificationService.sendClearNotificationMessage("timer-notification").catch((error) => {
-        console.error("Dashboard: Error clearing timer notification:", error);
-      });
-
-      // GPS, zone scoring, and persistence run in the background
-      void (async () => {
-        try {
-          const freshLocation = await getUserLocation({ fresh: true });
-          const { zoneId, zoneInfo } = buildZoneFromLocation(freshLocation);
-
-          if (zoneId && freshLocation.coordinates.latitude !== 0) {
-            setUserProfile((prev) => (prev ? { ...prev, location: freshLocation } : null));
-            supabase
-              .from("profiles")
-              .update({ location: freshLocation })
-              .eq("id", userId)
-              .then(({ error: locationError }) => {
-                if (locationError) {
-                  console.error("Dashboard: Error updating profile location:", locationError);
-                }
-              });
-          }
-
-          let heistResult = null;
-          if (zoneId && zoneInfo) {
-            heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
-          }
-
-          const newActivity = {
-            id: crypto.randomUUID(),
-            user_id: userId,
-            timestamp: new Date().toISOString(),
-            exercise_id: session.exercise.id,
-            exercise_name: session.exercise.name,
-            reps: session.reps,
-            multiplier: currentMultiplier,
-            dice_roll: session.diceRoll,
-            zone_id: zoneId,
-          };
-
-          const { error } = await supabase.from("activities").insert(newActivity);
-          if (error) {
-            console.error("Dashboard: Error inserting activity:", error);
-            setHistory((prevHistory) => prevHistory.slice(1));
-            return;
-          }
-
-          if (heistResult?.isHeist) {
-            setWorkoutCompleteModal({
-              heist: {
-                zoneName: heistResult.zoneInfo.displayName,
-                previousCaptain: heistResult.previousCaptain,
-                totalReps: heistResult.newTotalReps,
-              },
-            });
-            scheduleRestart(3500);
-          }
-
-          await fetchHistory();
-
-          try {
-            const { data: updatedProfile, error: profileError } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", userId)
-              .single();
-
-            if (updatedProfile && !profileError) {
-              setUserProfile({
-                ...updatedProfile,
-                timer_duration: updatedProfile.timer_duration || 300,
-              });
-            } else {
-              console.error("Dashboard: Error refreshing user profile:", profileError);
-            }
-          } catch (profileError) {
-            console.error("Dashboard: Exception refreshing user profile:", profileError);
-          }
-
-          try {
-            const singleWorkoutAchievements =
-              await AchievementService.checkSingleWorkoutAchievements(userId, session.reps);
-            const generalAchievements = await AchievementService.checkAndUnlockAchievements(userId);
-            const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
-            if (allNewAchievements.length > 0) {
-              setUnlockedAchievements(allNewAchievements);
-            }
-          } catch (error) {
-            console.error("Error checking achievements:", error);
-          }
-
-          try {
-            await api.completeWorkout(
-              userId,
-              session.exercise.name,
-              session.reps,
-              multipliers
-            );
-          } catch (error) {
-            console.error("Error completing workout:", error);
-          }
-        } catch (error) {
-          console.error("Dashboard: Error in background workout complete:", error);
-        }
-      })();
-    }, [
-      isCompletingWorkout,
-      latestSession,
+    const handleWorkoutComplete = useWorkoutComplete({
       userId,
+      latestSession,
       multipliers,
-      fetchHistory,
+      isCompletingWorkout,
+      setIsCompletingWorkout,
+      setWorkoutCompleteModal,
+      setCurrentWorkoutComplete,
+      setTimerComplete,
+      setLatestSession,
+      setIsRollAndStartMode,
+      setUnlockedAchievements,
       setUserProfile,
+      setHistory,
+      fetchHistory,
       resetNotificationFlags,
       onStartTimer,
-    ]);
-
-    const fetchLastSessionStart = useCallback(async () => {
-      if (!userId) return;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("last_session_start")
-        .eq("id", userId)
-        .single();
-      if (!error && data) {
-        setLastSessionStart(data.last_session_start ? new Date(data.last_session_start) : null);
-      }
-    }, [userId]);
-
-    useEffect(() => {
-      if (userId) fetchLastSessionStart();
-    }, [userId, fetchLastSessionStart]);
+    });
 
     const resetAll = useCallback(async () => {
       console.log("Dashboard: Resetting all game state.");
@@ -505,31 +252,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       };
     }, [userId, lastSessionStart, resetAll]);
 
-    // Helper functions for Stats Panel (use history & lastSessionStart from DB)
-    const getTotalSetsToday = useCallback(() => {
-      if (!lastSessionStart) return 0;
-      return history.filter((activity) => new Date(activity.timestamp) > lastSessionStart).length;
-    }, [lastSessionStart, history]);
-
-    const getTotalRepsToday = useCallback(() => {
-      if (!lastSessionStart) return 0;
-      return history
-        .filter((activity) => new Date(activity.timestamp) > lastSessionStart)
-        .reduce((total, activity) => total + activity.reps, 0);
-    }, [lastSessionStart, history]);
-
-    const getRepsPerExerciseToday = useCallback(() => {
-      if (!lastSessionStart) return {};
-      const repsByExercise: Record<number, number> = {};
-      history
-        .filter((activity) => new Date(activity.timestamp) > lastSessionStart)
-        .forEach((activity) => {
-          repsByExercise[activity.exercise_id] =
-            (repsByExercise[activity.exercise_id] || 0) + activity.reps;
-        });
-      return repsByExercise;
-    }, [lastSessionStart, history]);
-
     const handleResetClick = useCallback((type: "game" | "multipliers") => {
       setShowConfirmModal({ show: true, type });
     }, []);
@@ -546,10 +268,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     }, []);
 
     const handleDiceRoll = useCallback(
-      (session: any) => {
-        console.log("Dashboard: Received dice roll session:", session);
-        console.log("Dashboard: Current selectedSplit:", selectedSplit);
-        console.log("Dashboard: Exercise in session:", session.exercise);
+      (session: WorkoutSession) => {
         setCurrentWorkoutComplete(false);
         setLatestSession(session);
 
@@ -557,28 +276,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           setIsRollAndStartMode(false);
         }
       },
-      [isRollAndStartMode, onStartTimer, selectedSplit]
+      [isRollAndStartMode]
     );
-
-    // Memoize the sessionHistory to prevent unnecessary recalculations
-    const sessionHistory = useMemo(() => {
-      return lastSessionStart
-        ? history.filter((activity) => new Date(activity.timestamp) > lastSessionStart)
-        : [];
-    }, [lastSessionStart, history]);
-
-    // Memoize the stats calculations to prevent unnecessary re-renders
-    const statsData = useMemo(() => {
-      const totalSetsToday = getTotalSetsToday();
-      const totalRepsToday = getTotalRepsToday();
-      const repsPerExerciseToday = getRepsPerExerciseToday();
-
-      return {
-        totalSetsToday,
-        totalRepsToday,
-        repsPerExerciseToday,
-      };
-    }, [getTotalSetsToday, getTotalRepsToday, getRepsPerExerciseToday]);
 
     const updateNotificationsEnabled = useCallback(
       async (enabled: boolean) => {
@@ -667,164 +366,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setShowExerciseModal(true);
     }, []);
 
-    // Memoize the main content to prevent unnecessary re-renders
-    const mainContent = useMemo(() => {
-      if ((timerComplete && !currentWorkoutComplete) || isRollAndStartMode) {
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-              <Settings size={20} className="text-gray-500 dark:text-gray-400" />
-              {/* Master/Slave indicator dot */}
-              <div
-                className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
-                  isMaster ? "bg-green-500" : "bg-blue-500"
-                }`}
-                title={isMaster ? "Master Device" : "Slave Device"}
-              />
-            </button>
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Roll the Dice</h2>
-              <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                <span>Active Split:</span>
-                <span className="font-medium text-blue-600 dark:text-blue-400">
-                  {selectedSplit.name}
-                </span>
-                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
-                  {selectedSplit.exercises.length} exercises
-                </span>
-              </div>
-            </div>
-            {userProfile?.user_split_id ? (
-              <DiceRoller
-                key={`dice-roller-${latestSession ? "completed" : "ready"}`}
-                onRollComplete={handleDiceRoll}
-                multipliers={multipliers}
-                rollCompleted={!!latestSession}
-                session={latestSession}
-                autoRoll={isRollAndStartMode}
-                selectedSplit={selectedSplit}
-              />
-            ) : (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                <p className="text-gray-600 dark:text-gray-400">Loading workout split...</p>
-              </div>
-            )}
-          </div>
-        );
-      } else if (!latestSession && stableUserProfile) {
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 relative">
-            <div className="absolute top-4 right-4 flex space-x-2">
-              <button
-                onClick={() => setShowSplitsPanel(!showSplitsPanel)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title="Select Workout Split">
-                <Dumbbell size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                <Settings size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-              {/* Master/Slave indicator dot */}
-              <div
-                className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
-                  isMaster ? "bg-green-500" : "bg-blue-500"
-                }`}
-                title={isMaster ? "Master Device" : "Slave Device"}
-              />
-            </div>
-            <h2 className="text-xl font-semibold mb-4">Workout Timer</h2>
-            <Timer
-              duration={stableUserProfile?.timer_duration}
-              onComplete={handleTimerComplete}
-              onRollAndStart={handleRollAndStart}
-            />
-
-            {/* Splits Panel */}
-            {showSplitsPanel && userProfile?.user_split_id && (
-              <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Select Workout Split
-                  </h3>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {splits.map((split) => (
-                    <button
-                      key={split.id}
-                      onClick={() => {
-                        handleSplitChange(split.id);
-                        setShowSplitsPanel(false);
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        selectedSplit.id === split.id
-                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
-                          : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300"
-                      }`}>
-                      <div className="text-center">
-                        <div className="text-2xl mb-1">{split.emoji}</div>
-                        <div className="font-medium text-sm">{split.name}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {split.exercises.length} exercises
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      }
-      return null;
-    }, [
-      timerComplete,
-      currentWorkoutComplete,
-      isRollAndStartMode,
-      latestSession,
-      stableUserProfile,
-      multipliers,
-      handleDiceRoll,
-      handleTimerComplete,
-      handleRollAndStart,
-      showSettings,
-      isMaster,
-      selectedSplit,
-      handleSplitChange,
-      handleExerciseClick,
-      showSplitsPanel,
-      setShowSplitsPanel,
-      splits,
-    ]);
-
-    const currentWorkoutContent = useMemo(() => {
-      if (!latestSession) return null;
-
-      return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-          <div className="flex justify-between items-start mb-4">
-            <h2 className="text-xl font-semibold">Current Workout</h2>
-            <button
-              onClick={handleWorkoutComplete}
-              disabled={isCompletingWorkout}
-              className={`px-4 py-2 text-white rounded-lg transition-colors ${
-                isCompletingWorkout
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-green-500 hover:bg-green-600"
-              }`}>
-              {isCompletingWorkout ? "Completing..." : "Complete Exercise"}
-            </button>
-          </div>
-          <ExerciseDisplay session={latestSession} onComplete={handleWorkoutComplete} />
-        </div>
-      );
-    }, [latestSession, handleWorkoutComplete]);
-
-    // Early return after all hooks
     if (!userId) {
       return null;
     }
@@ -833,8 +374,30 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       <div className="min-h-screen bg-gray-900 text-white p-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="col-span-1 lg:col-span-2 space-y-6">
-            {mainContent}
-            {currentWorkoutContent}
+            <WorkoutFlow
+              timerComplete={timerComplete}
+              currentWorkoutComplete={currentWorkoutComplete}
+              isRollAndStartMode={isRollAndStartMode}
+              latestSession={latestSession}
+              userProfile={userProfile}
+              timerDuration={stableUserProfile?.timer_duration}
+              multipliers={multipliers}
+              selectedSplit={selectedSplit}
+              isMaster={isMaster}
+              isCompletingWorkout={isCompletingWorkout}
+              showSettings={showSettings}
+              showSplitsPanel={showSplitsPanel}
+              onToggleSettings={() => setShowSettings(!showSettings)}
+              onToggleSplitsPanel={() => setShowSplitsPanel(!showSplitsPanel)}
+              onTimerComplete={handleTimerComplete}
+              onRollAndStart={handleRollAndStart}
+              onDiceRoll={handleDiceRoll}
+              onSplitChange={(splitId) => {
+                handleSplitChange(splitId);
+                setShowSplitsPanel(false);
+              }}
+              onWorkoutComplete={handleWorkoutComplete}
+            />
             <History history={sessionHistory as any[]} selectedSplit={selectedSplit} />
             {showAchievements && <Achievements userProfile={userProfile} />}
           </div>
@@ -873,13 +436,13 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
                   <div className="flex items-center space-x-2">
                     <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Sets</h4>
                     <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                      {statsData.totalSetsToday}
+                      {stats.totalSetsToday}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Reps</h4>
                     <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                      {statsData.totalRepsToday}
+                      {stats.totalRepsToday}
                     </span>
                   </div>
                 </div>
@@ -916,7 +479,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               <div className="space-y-2">
                 {Object.entries(multipliers).map(([exerciseId, multiplier]) => {
                   const exercise = getExerciseById(Number(exerciseId), selectedSplit.id);
-                  const repsToday = statsData.repsPerExerciseToday[Number(exerciseId)] || 0;
+                  const repsToday = stats.repsPerExerciseToday[Number(exerciseId)] || 0;
                   return (
                     <div
                       key={exerciseId}
