@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { resolveSyncTimerAction } from "../utils/timerSyncLogic";
 import { timerSyncService } from "../utils/timerSyncService";
 
 interface UseTimerSyncOptions {
@@ -43,31 +44,35 @@ export function useTimerSync({
       masterDeviceId: string | null;
       duration: number;
     }) => {
-      if (state.startTime && state.masterDeviceId && !isTimerActive && state.duration > 0) {
-        const startTime = new Date(state.startTime);
-        const elapsedMs = Date.now() - startTime.getTime();
-        const remainingMs = Math.max(0, state.duration * 1000 - elapsedMs);
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
+      const action = resolveSyncTimerAction({
+        state,
+        isTimerActive,
+        timerComplete,
+        isMaster: timerSyncService.isDeviceMasterSync(),
+      });
 
-        if (remainingSeconds > 0) {
-          setTimeLeft(remainingSeconds);
+      switch (action.type) {
+        case "resume":
+          setTimeLeft(action.remainingSeconds);
           setIsTimerActive(true);
           setTimerComplete(false);
           setCurrentWorkoutComplete(false);
-          startWorkerTimer(remainingSeconds);
-        } else if (!timerComplete) {
+          startWorkerTimer(action.remainingSeconds);
+          break;
+        case "complete":
           setTimerComplete(true);
           setIsTimerActive(false);
           setTimeLeft(0);
           setCurrentWorkoutComplete(false);
           stopWorkerTimer();
-        }
-      } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMasterSync()) {
-        if (isTimerActive) {
+          break;
+        case "clear":
           setIsTimerActive(false);
           setTimeLeft(0);
           stopWorkerTimer();
-        }
+          break;
+        case "noop":
+          break;
       }
     };
 
