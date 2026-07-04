@@ -9,6 +9,7 @@ import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient"; // Removed load/save from local storage
 import { timerSyncService } from "../utils/timerSyncService";
+import { buildZoneIdFromProfile, checkDiceHeist, getZoneFromCoordinates } from "../utils/zoneService";
 import { AchievementNotification } from "./AchievementNotification";
 import { Achievements } from "./Achievements";
 import DiceRoller from "./DiceRoller";
@@ -18,6 +19,10 @@ import History from "./History";
 import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import Timer from "./Timer";
+import {
+  WorkoutCompleteHeistInfo,
+  WorkoutCompleteModal,
+} from "./WorkoutCompleteModal";
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -71,7 +76,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const [history, setHistory] = useState<Activity[]>([]);
     const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
     const [showSettings, setShowSettings] = useState(false);
-    const [showThatsLikeYouModal, setShowThatsLikeYouModal] = useState(false);
+    const [workoutCompleteModal, setWorkoutCompleteModal] = useState<{
+      heist?: WorkoutCompleteHeistInfo;
+    } | null>(null);
     const [showConfirmModal, setShowConfirmModal] = useState<{
       show: boolean;
       type: "game" | "multipliers" | null;
@@ -249,25 +256,22 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
       setIsCompletingWorkout(true);
 
-      // Show modal and set up optimistic timer restart
-      setShowThatsLikeYouModal(true);
+      const dismissModalAndRestart = (heist?: WorkoutCompleteHeistInfo) => {
+        setWorkoutCompleteModal({ heist });
+        const duration = heist ? 3500 : 2000;
 
-      // Optimistically restart timer after modal timeout, regardless of backend sync
-      setTimeout(() => {
-        setShowThatsLikeYouModal(false);
-
-        // Reset all timer and workout states optimistically
-        setCurrentWorkoutComplete(false);
-        setTimerComplete(false);
-        // Clear notification flags for new timer session
-        sessionStorage.removeItem("openedFromNotification");
-        resetNotificationFlags();
-        onStartTimer();
-        setLatestSession(null);
-        setIsRollAndStartMode(false); // Reset roll and start mode
-
-        console.log("Dashboard: Optimistically restarted timer after workout complete");
-      }, 2000);
+        setTimeout(() => {
+          setWorkoutCompleteModal(null);
+          setCurrentWorkoutComplete(false);
+          setTimerComplete(false);
+          sessionStorage.removeItem("openedFromNotification");
+          resetNotificationFlags();
+          onStartTimer();
+          setLatestSession(null);
+          setIsRollAndStartMode(false);
+          console.log("Dashboard: Optimistically restarted timer after workout complete");
+        }, duration);
+      };
 
       try {
         if (!latestSession || !user) return;
@@ -275,14 +279,28 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         // Clear timer notifications when completing exercise
         try {
           console.log("Dashboard: Clearing timer notifications on workout complete");
-          notificationService.clearAllNotifications(); // Clear all notifications first
+          notificationService.clearAllNotifications();
           await notificationService.sendClearNotificationMessage("timer-notification");
         } catch (error) {
           console.error("Dashboard: Error clearing notifications:", error);
         }
 
-        // Get the current (derived) multiplier for this exercise before logging it in activity
         const currentMultiplier = multipliers[latestSession.exercise.id] || 1;
+
+        const zoneId = buildZoneIdFromProfile(userProfile?.location);
+        const zoneInfo =
+          zoneId && userProfile?.location?.coordinates
+            ? getZoneFromCoordinates(
+                userProfile.location.coordinates.latitude,
+                userProfile.location.coordinates.longitude,
+                userProfile.location.city
+              )
+            : null;
+
+        let heistResult = null;
+        if (zoneId && zoneInfo) {
+          heistResult = await checkDiceHeist(zoneId, user.id, latestSession.reps, zoneInfo);
+        }
 
         const newActivity = {
           id: crypto.randomUUID(),
@@ -291,68 +309,73 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           exercise_id: latestSession.exercise.id,
           exercise_name: latestSession.exercise.name,
           reps: latestSession.reps,
-          multiplier: currentMultiplier, // Store the multiplier *at the time of this activity*
+          multiplier: currentMultiplier,
           dice_roll: latestSession.diceRoll,
+          zone_id: zoneId,
         };
 
         const { error } = await supabase.from("activities").insert(newActivity);
         if (error) {
           console.error("Dashboard: Error inserting activity:", error);
-          setHistory((prevHistory) => prevHistory.slice(1)); // Revert locally if insert fails
-        } else {
-          await fetchHistory(); // Trigger re-fetch of history to update calculated counts/multipliers
+          setHistory((prevHistory) => prevHistory.slice(1));
+          return;
+        }
 
-          // Refresh user profile to get updated streak data
-          try {
-            const { data: updatedProfile, error: profileError } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", user.id)
-              .single();
-
-            if (updatedProfile && !profileError) {
-              setUserProfile({
-                ...updatedProfile,
-                timer_duration: updatedProfile.timer_duration || 300,
-              });
-            } else {
-              console.error("Dashboard: Error refreshing user profile:", profileError);
+        const heistInfo: WorkoutCompleteHeistInfo | undefined = heistResult?.isHeist
+          ? {
+              zoneName: heistResult.zoneInfo.displayName,
+              previousCaptain: heistResult.previousCaptain,
+              totalReps: heistResult.newTotalReps,
             }
-          } catch (profileError) {
-            console.error("Dashboard: Exception refreshing user profile:", profileError);
+          : undefined;
+
+        dismissModalAndRestart(heistInfo);
+
+        await fetchHistory();
+
+        // Refresh user profile to get updated streak data
+        try {
+          const { data: updatedProfile, error: profileError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+
+          if (updatedProfile && !profileError) {
+            setUserProfile({
+              ...updatedProfile,
+              timer_duration: updatedProfile.timer_duration || 300,
+            });
+          } else {
+            console.error("Dashboard: Error refreshing user profile:", profileError);
           }
+        } catch (profileError) {
+          console.error("Dashboard: Exception refreshing user profile:", profileError);
+        }
 
-          // Check for achievements after successful activity insertion
-          try {
-            // Check single workout achievements
-            const singleWorkoutAchievements =
-              await AchievementService.checkSingleWorkoutAchievements(user.id, latestSession.reps);
-
-            // Check general achievements
-            const generalAchievements = await AchievementService.checkAndUnlockAchievements(
-              user.id
-            );
-
-            // Combine and show notifications
-            const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
-            if (allNewAchievements.length > 0) {
-              setUnlockedAchievements(allNewAchievements);
-            }
-          } catch (error) {
-            console.error("Error checking achievements:", error);
+        // Check for achievements after successful activity insertion
+        try {
+          const singleWorkoutAchievements =
+            await AchievementService.checkSingleWorkoutAchievements(user.id, latestSession.reps);
+          const generalAchievements = await AchievementService.checkAndUnlockAchievements(user.id);
+          const allNewAchievements = [...singleWorkoutAchievements, ...generalAchievements];
+          if (allNewAchievements.length > 0) {
+            setUnlockedAchievements(allNewAchievements);
           }
+        } catch (error) {
+          console.error("Error checking achievements:", error);
+        }
 
-          // Send friend activity notification
-          try {
-            await api.completeWorkout(
-              user.id,
-              latestSession.exercise.name,
-              latestSession.reps,
-              multipliers
-            );
-          } catch (error) {
-            console.error("Error completing workout:", error);
-          }
+        // Send friend activity notification
+        try {
+          await api.completeWorkout(
+            user.id,
+            latestSession.exercise.name,
+            latestSession.reps,
+            multipliers
+          );
+        } catch (error) {
+          console.error("Error completing workout:", error);
         }
       } catch (error) {
         console.error("Dashboard: Error in handleWorkoutComplete:", error);
@@ -367,6 +390,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       fetchHistory,
       setUserProfile,
       resetNotificationFlags,
+      userProfile?.location,
+      onStartTimer,
     ]);
 
     const fetchLastSessionStart = useCallback(async () => {
@@ -969,13 +994,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
           </div>
         )}
 
-        {showThatsLikeYouModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full text-center">
-              <h2 className="text-4xl mb-4">🙌</h2>
-              <p className="text-xl">That's like you!</p>
-            </div>
-          </div>
+        {workoutCompleteModal && (
+          <WorkoutCompleteModal heist={workoutCompleteModal.heist} />
         )}
 
         {showConfirmModal.show && (

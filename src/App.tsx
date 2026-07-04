@@ -11,6 +11,7 @@ import OuraCallback from "./components/OuraCallback";
 import PrivacyPolicy from "./components/PrivacyPolicy";
 import TermsOfService from "./components/TermsOfService";
 import TimerHeader from "./components/TimerHeader";
+import ZoneMap from "./components/ZoneMap";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { UserProfile } from "./types/social";
@@ -766,6 +767,9 @@ function App() {
                 <Link to="/activity" className="nav-link">
                   Activity
                 </Link>
+                <Link to="/map" className="nav-link">
+                  Heists
+                </Link>
               </div>
 
               {/* User Info & Sign Out (Right Section - Hidden on mobile) */}
@@ -850,6 +854,9 @@ function App() {
                   className="mobile-nav-link"
                   onClick={() => setIsMenuOpen(false)}>
                   Activity
+                </Link>
+                <Link to="/map" className="mobile-nav-link" onClick={() => setIsMenuOpen(false)}>
+                  Heists
                 </Link>
               </div>
               <div className="pt-4 pb-3 border-t border-gray-700">
@@ -952,6 +959,7 @@ function App() {
               element={<Friends onFriendRequestUpdate={refreshPendingFriendRequests} />}
             />
             <Route path="/activity" element={<FriendActivity />} />
+            <Route path="/map" element={<ZoneMap userProfile={userProfile} />} />
             <Route path="/oura/callback" element={<OuraCallback />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-of-service" element={<TermsOfService />} />
