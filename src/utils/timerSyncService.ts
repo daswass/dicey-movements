@@ -225,15 +225,12 @@ class TimerSyncService {
 
   // Start real-time subscription for timer updates
   startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 5000): void {
-    // Prevent multiple subscriptions
-    if (this.channelManager.getStatus().isConnected || this.syncInterval) {
-      return;
-    }
-
-    // Store the callback for reconnection purposes
     this.currentStateChangeCallback = onStateChange;
 
-    // Don't get initial state here - let the normal initialization flow handle it
+    // Prevent duplicate polling intervals; realtime can reconnect via channel manager
+    if (this.syncInterval) {
+      return;
+    }
 
     // Set up real-time subscription only if page is visible
     if (!document.hidden) {

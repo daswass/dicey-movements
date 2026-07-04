@@ -90,6 +90,7 @@ export class SupabaseChannelManager {
     filter: any;
     callback: (payload: any) => void;
   }> = [];
+  private isCreatingChannel = false;
 
   constructor(config: ChannelConfig) {
     this.supabase = config.supabase;
@@ -167,6 +168,38 @@ export class SupabaseChannelManager {
     window.addEventListener("online", this.onlineHandler);
   }
 
+  private subscriptionKey(event: string, filter: any): string {
+    return `${event}:${JSON.stringify(filter)}`;
+  }
+
+  private findSubscription(event: string, filter: any) {
+    const key = this.subscriptionKey(event, filter);
+    return this.subscriptions.find(
+      (subscription) => this.subscriptionKey(subscription.event, subscription.filter) === key
+    );
+  }
+
+  private removeCurrentChannel(): void {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (!this.channel) {
+      return;
+    }
+
+    const channel = this.channel;
+    this.channel = null;
+    this.isConnected = false;
+
+    try {
+      this.supabase.removeChannel(channel);
+    } catch (error) {
+      console.warn(`${this.channelName}: Error removing channel:`, error);
+    }
+  }
+
   /**
    * Subscribe to a real-time event
    * @param event - The event type (e.g., "postgres_changes")
@@ -175,18 +208,16 @@ export class SupabaseChannelManager {
    * @returns ChannelSubscription object with status and disconnect method
    */
   subscribe(event: string, filter: any, callback: (payload: any) => void): ChannelSubscription {
-    // Store the subscription for potential reconnection
-    this.subscriptions.push({ event, filter, callback });
+    const existing = this.findSubscription(event, filter);
+    if (existing) {
+      existing.callback = callback;
+    } else {
+      this.subscriptions.push({ event, filter, callback });
+    }
 
     // Only create channel if page is visible and not permanently disconnected
-    if (!document.hidden && !this.isPermanentlyDisconnected) {
-      if (this.channel) {
-        // Add to existing channel
-        (this.channel as any).on(event, filter, callback);
-      } else {
-        // Create new channel
-        this.createChannel();
-      }
+    if (!document.hidden && !this.isPermanentlyDisconnected && !this.channel) {
+      this.createChannel();
     }
 
     return {
@@ -199,6 +230,10 @@ export class SupabaseChannelManager {
   }
 
   private createChannel(): void {
+    if (this.isCreatingChannel) {
+      return;
+    }
+
     // Don't create channel if page is hidden or permanently disconnected
     if (document.hidden || this.isPermanentlyDisconnected) {
       console.log(
@@ -207,12 +242,13 @@ export class SupabaseChannelManager {
       return;
     }
 
-    if (this.channel) {
-      console.warn(`${this.channelName}: Channel already exists, disconnecting first`);
-      this.disconnect();
+    if (this.subscriptions.length === 0) {
+      return;
     }
 
+    this.isCreatingChannel = true;
     this.isActive = true;
+    this.removeCurrentChannel();
 
     try {
       this.channel = this.supabase.channel(this.channelName);
@@ -249,6 +285,7 @@ export class SupabaseChannelManager {
       });
     } catch (error) {
       console.error(`${this.channelName}: Error setting up real-time subscription:`, error);
+      this.removeCurrentChannel();
       if (this.onError) {
         this.onError(error as Error);
       }
@@ -256,6 +293,8 @@ export class SupabaseChannelManager {
       if (!document.hidden && !this.isPermanentlyDisconnected) {
         this.handleReconnection();
       }
+    } finally {
+      this.isCreatingChannel = false;
     }
   }
 
@@ -287,9 +326,6 @@ export class SupabaseChannelManager {
     this.reconnectTimeout = setTimeout(() => {
       // Check again if page is still visible before reconnecting
       if (!document.hidden && !this.isPermanentlyDisconnected) {
-        this.isConnected = false;
-        this.channel = null;
-        // Recreate the channel with all stored subscriptions
         if (this.subscriptions.length > 0) {
           this.createChannel();
         }
@@ -301,20 +337,7 @@ export class SupabaseChannelManager {
    * Temporarily disconnect (for visibility changes)
    */
   temporarilyDisconnect(): void {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
-    if (this.channel) {
-      try {
-        this.supabase.removeChannel(this.channel);
-      } catch (error) {
-        console.warn(`${this.channelName}: Error removing channel:`, error);
-      }
-      this.channel = null;
-      this.isConnected = false;
-    }
+    this.removeCurrentChannel();
 
     // Reset reconnect state but keep isActive true
     this.reconnectAttempts = 0;
@@ -326,23 +349,7 @@ export class SupabaseChannelManager {
   disconnect(): void {
     this.isActive = false;
     this.isPermanentlyDisconnected = true;
-
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
-    if (this.channel) {
-      try {
-        this.supabase.removeChannel(this.channel);
-      } catch (error) {
-        console.warn(`${this.channelName}: Error removing channel:`, error);
-      }
-      this.channel = null;
-      this.isConnected = false;
-    }
-
-    // Reset reconnect state
+    this.removeCurrentChannel();
     this.reconnectAttempts = 0;
   }
 

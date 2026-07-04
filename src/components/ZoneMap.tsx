@@ -162,13 +162,12 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     return getZoneFromCoordinates(
       userCoords.latitude,
       userCoords.longitude,
-      userProfile?.location?.city
+      userProfile?.location?.city,
     );
   }, [hasLocation, userCoords, userProfile?.location?.city]);
 
-  const mapCenter: [number, number] = hasLocation
-    ? [userCoords.latitude, userCoords.longitude]
-    : [40.7128, -74.006];
+  const mapCenter: [number, number] =
+    hasLocation ? [userCoords.latitude, userCoords.longitude] : [40.7128, -74.006];
 
   const captainMap = useMemo(() => {
     const map = new Map<string, ZoneCaptain>();
@@ -230,18 +229,17 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   }, [captains]);
 
   const legendItems = [
-    { relation: "self" as const, label: "Your zones" },
-    { relation: "friend" as const, label: "Friend zones" },
-    { relation: "other" as const, label: "Other zones" },
+    { relation: "self" as const, label: "You" },
+    { relation: "friend" as const, label: "Friends" },
+    { relation: "other" as const, label: "Other" },
   ];
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6">
       <div className="mb-4 sm:mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Territory Map</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Plan a Dice Heist</h1>
         <p className="text-gray-400 text-sm sm:text-base">
-          Claimed zones glow on the map —{" "}
-          <span className="text-green-500">green</span> for you,{" "}
+          Claimed zones glow on the map — <span className="text-green-500">green</span> for you,{" "}
           <span className="text-blue-400">blue</span> for friends,{" "}
           <span className="text-red-400">red</span> for everyone else. Take over a zone for a{" "}
           <span className="text-yellow-400 font-semibold">Dice Heist!</span>
@@ -281,19 +279,19 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 const relation = getCaptainRelation(
                   captain.captainUserId,
                   userProfile?.id || "",
-                  friendIds
+                  friendIds,
                 );
 
                 return (
-                <ClaimedZoneCircle
-                  key={zone.id}
-                  zone={zone}
-                  captain={captain}
-                  color={getZoneColorByRelation(relation)}
-                  relation={relation}
-                  isUserZone={userZone?.id === zone.id}
-                  onSelect={handleZoneClick}
-                />
+                  <ClaimedZoneCircle
+                    key={zone.id}
+                    zone={zone}
+                    captain={captain}
+                    color={getZoneColorByRelation(relation)}
+                    relation={relation}
+                    isUserZone={userZone?.id === zone.id}
+                    onSelect={handleZoneClick}
+                  />
                 );
               })}
             </MapContainer>
@@ -352,7 +350,9 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
               {selectedZone ? selectedZone.displayName : "Zone Standings"}
             </h2>
             {!selectedZone && (
-              <p className="text-gray-500 text-sm">Click a claimed zone on the map to see standings.</p>
+              <p className="text-gray-500 text-sm">
+                Click a claimed zone on the map to see standings.
+              </p>
             )}
             {selectedZone && standings.length === 0 && (
               <p className="text-gray-500 text-sm">No activity in this zone this week.</p>
@@ -363,35 +363,34 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                   const relation = getCaptainRelation(
                     entry.userId,
                     userProfile?.id || "",
-                    friendIds
+                    friendIds,
                   );
                   const dotColor = getZoneColorByRelation(relation);
 
                   return (
-                  <li
-                    key={entry.userId}
-                    className={`flex items-center justify-between px-3 py-2 rounded-lg ${
-                      index === 0
-                        ? "bg-yellow-900/30 border border-yellow-700/50"
+                    <li
+                      key={entry.userId}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg ${
+                        index === 0 ?
+                          "bg-yellow-900/30 border border-yellow-700/50"
                         : "bg-gray-700/50"
-                    }`}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-400 w-5 text-right">{index + 1}.</span>
-                      {index === 0 && <Crown size={14} className="text-yellow-500" />}
-                      <span
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: dotColor }}
-                      />
-                      <span className="text-gray-200">{entry.username}</span>
-                    </div>
-                    <span className="text-gray-400 font-mono text-sm">{entry.totalReps}</span>
-                  </li>
+                      }`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 w-5 text-right">{index + 1}.</span>
+                        {index === 0 && <Crown size={14} className="text-yellow-500" />}
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: dotColor }}
+                        />
+                        <span className="text-gray-200">{entry.username}</span>
+                      </div>
+                      <span className="text-gray-400 font-mono text-sm">{entry.totalReps}</span>
+                    </li>
                   );
                 })}
               </ol>
             )}
           </div>
-
         </div>
       </div>
     </div>
