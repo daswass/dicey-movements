@@ -8,6 +8,7 @@ import {
   requireSelfFromUserIdField,
   requireSelfParam,
 } from "./authMiddleware";
+import { createOuraOAuthState, verifyOuraOAuthState } from "./oauthState";
 import { OuraService } from "./ouraService";
 import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
@@ -59,7 +60,7 @@ app.get("/api/health", (req, res) => {
 app.get("/api/oura/auth-url", requireAuth, async (req, res) => {
   try {
     const userId = req.authUser!.id;
-    const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
+    const state = createOuraOAuthState(userId);
     const authUrl = OuraService.getAuthorizationUrl(state);
 
     res.json({ authUrl });
@@ -77,9 +78,7 @@ app.get("/api/oura/callback", async (req, res) => {
       return res.status(400).json({ error: "Missing code or state parameter" });
     }
 
-    // Decode state to get userId
-    const stateData = JSON.parse(Buffer.from(state as string, "base64").toString());
-    const { userId } = stateData;
+    const { userId } = verifyOuraOAuthState(state as string);
 
     // Exchange code for tokens
     const tokenData = await OuraService.exchangeCodeForToken(code as string);
