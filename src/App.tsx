@@ -7,6 +7,7 @@ import { HighFiveEffect } from "./components/HighFiveEffect";
 import { HighFiveNotification } from "./components/HighFiveNotification";
 import { useAuth } from "./contexts/AuthContext";
 import { useTimerNotifications } from "./hooks/useTimerNotifications";
+import { useTimerSync } from "./hooks/useTimerSync";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
 import { activitySyncService } from "./utils/activitySyncService";
@@ -15,7 +16,7 @@ import {
   fetchPendingFriendRequests,
   sendHighFive,
 } from "./utils/socialService";
-import { timerSyncService, type TimerState } from "./utils/timerSyncService";
+import { timerSyncService } from "./utils/timerSyncService";
 
 const Friends = lazy(() => import("./components/Friends").then((m) => ({ default: m.Friends })));
 const FriendActivity = lazy(() =>
@@ -107,6 +108,17 @@ function App() {
     setCurrentWorkoutComplete,
   });
 
+  useTimerSync({
+    timerComplete,
+    setTimerComplete,
+    isTimerActive,
+    setIsTimerActive,
+    setTimeLeft,
+    setCurrentWorkoutComplete,
+    startWorkerTimer,
+    stopWorkerTimer,
+  });
+
   const getDayOfWeek = () => {
     const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
     return days[new Date().getDay()];
@@ -121,26 +133,6 @@ function App() {
   }, []);
 
   const showTimerHeader = isTimerActive;
-
-  // Handle visibility changes to reconnect services when tab becomes visible
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // The services will automatically reconnect when the page becomes visible
-        // due to the visibility handling in SupabaseChannelManager
-
-        // Force refresh timer sync state after reconnection
-        setTimeout(() => {
-          timerSyncService.refreshState();
-        }, 1000); // Small delay to ensure reconnection is complete
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
 
   // Initialize notification service
   useEffect(() => {
@@ -355,70 +347,15 @@ function App() {
 
     // Start timer sync as master
     timerSyncService.startTimerSync(duration);
-  }, [userProfile?.timer_duration, startWorkerTimer, setIsTimerActive, setTimeLeft]);
-
-  // Cleanup timer sync when component unmounts
-  useEffect(() => {
-    const handleTimerStateChange = (state: TimerState) => {
-      if (state.startTime && state.masterDeviceId && !isTimerActive && state.duration > 0) {
-        const startTime = new Date(state.startTime);
-        const now = new Date();
-        const elapsedMs = now.getTime() - startTime.getTime();
-        const remainingMs = Math.max(0, state.duration * 1000 - elapsedMs);
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
-
-        if (remainingSeconds > 0) {
-          setTimeLeft(remainingSeconds);
-          setIsTimerActive(true);
-          setTimerComplete(false);
-          setCurrentWorkoutComplete(false);
-          startWorkerTimer(remainingSeconds);
-        } else {
-          // Timer has already completed - only set if not already completed
-          if (!timerComplete) {
-            setTimerComplete(true);
-            setIsTimerActive(false);
-            setTimeLeft(0);
-            setCurrentWorkoutComplete(false);
-            stopWorkerTimer();
-          }
-        }
-      } else if (!state.startTime && state.duration > 0 && timerSyncService.isDeviceMasterSync()) {
-        if (isTimerActive) {
-          setIsTimerActive(false);
-          setTimeLeft(0);
-          stopWorkerTimer();
-        }
-      }
-    };
-
-    // Start polling for timer updates
-    timerSyncService.startPolling(handleTimerStateChange);
-
-    return () => {
-      timerSyncService.stopPolling();
-    };
   }, [
-    timerComplete,
-    isTimerActive,
-    setTimerComplete,
+    userProfile?.timer_duration,
+    startWorkerTimer,
     setIsTimerActive,
     setTimeLeft,
+    setTimerComplete,
     setCurrentWorkoutComplete,
-    stopWorkerTimer,
-    startWorkerTimer,
+    notificationSentRef,
   ]);
-
-  // Cleanup timer sync when component unmounts
-  useEffect(() => {
-    return () => {
-      // Stop timer sync if we're master
-      if (timerSyncService.isDeviceMasterSync()) {
-        timerSyncService.stopTimerSync();
-      }
-      timerSyncService.stopPolling();
-    };
-  }, []);
 
   if (!session) {
     return <Auth />;

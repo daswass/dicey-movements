@@ -1,24 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getExerciseById, getSplitById, getDefaultSplit } from "../data/exercises";
+import { getSplitById, getDefaultSplit } from "../data/exercises";
 import { ExerciseMultipliers, WorkoutSession, Split, Exercise } from "../types";
 import { UserProfile } from "../types/social";
+import { useProfileSettings } from "../hooks/useProfileSettings";
 import { useTimerMasterStatus } from "../hooks/useTimerMasterStatus";
 import { useWorkoutComplete } from "../hooks/useWorkoutComplete";
 import { useWorkoutHistory } from "../hooks/useWorkoutHistory";
 import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient";
-import { AchievementNotification } from "./AchievementNotification";
+import DashboardModals from "./DashboardModals";
+import DashboardStatsPanel from "./DashboardStatsPanel";
 import { Achievements } from "./Achievements";
-import ExerciseInstructionsModal from "./ExerciseInstructionsModal";
 import History from "./History";
-import SettingsPanel from "./SettingsPanel";
 import SocialFeatures from "./SocialFeatures";
 import WorkoutFlow from "./WorkoutFlow";
-import {
-  WorkoutCompleteHeistInfo,
-  WorkoutCompleteModal,
-} from "./WorkoutCompleteModal";
+import { WorkoutCompleteHeistInfo } from "./WorkoutCompleteModal";
 
 interface DashboardProps {
   timerComplete: boolean;
@@ -57,6 +54,18 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       fetchLastSessionStart,
     } = useWorkoutHistory(userId, isMaster);
 
+    const {
+      notificationsEnabled,
+      updateNotificationsEnabled,
+      updateTimerDuration,
+      handleSplitChange: saveSplitChange,
+    } = useProfileSettings({
+      userId,
+      userProfile,
+      setUserProfile,
+      onResetTimerToDuration,
+    });
+
     const [selectedSplit, setSelectedSplit] = useState<Split>(getDefaultSplit());
     const multipliers: ExerciseMultipliers = useMemo(() => {
       const calculatedMultipliers: ExerciseMultipliers = {};
@@ -75,7 +84,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       show: boolean;
       type: "game" | "multipliers" | null;
     }>({ show: false, type: null });
-    const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
     const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
     const [showAchievements, setShowAchievements] = useState(false);
     const [isRollAndStartMode, setIsRollAndStartMode] = useState(false);
@@ -279,86 +287,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       [isRollAndStartMode]
     );
 
-    const updateNotificationsEnabled = useCallback(
-      async (enabled: boolean) => {
-        setNotificationsEnabled(enabled);
-        if (userId) {
-          const { error } = await supabase
-            .from("profiles")
-            .update({ notifications_enabled: enabled })
-            .eq("id", userId);
-          if (error) {
-            console.error("Dashboard: Error updating notifications_enabled:", error);
-          } else {
-            setUserProfile((prev) => (prev ? { ...prev, notifications_enabled: enabled } : null));
-          }
-        }
-      },
-      [userId, setUserProfile]
-    );
-
-    const updateTimerDuration = useCallback(
-      async (newDuration: number) => {
-        console.log("Dashboard: updateTimerDuration received newDuration:", newDuration);
-
-        // Update local state immediately for instant UI response
-        setUserProfile((prev) => (prev ? { ...prev, timer_duration: newDuration } : null));
-
-        // Reset timer to new duration immediately
-        onResetTimerToDuration(newDuration);
-
-        // Clear timer notifications when changing duration
-        try {
-          notificationService.clearAllNotifications(); // Clear all notifications first
-          await notificationService.sendClearNotificationMessage("timer-notification");
-        } catch (error) {
-          console.error("Dashboard: Error clearing notifications on duration change:", error);
-        }
-
-        // Update database in the background
-        if (userId) {
-          const { error } = await supabase
-            .from("profiles")
-            .update({ timer_duration: newDuration })
-            .eq("id", userId);
-          if (error) {
-            console.error("Dashboard: Error updating timer_duration in DB:", error);
-          }
-        }
-      },
-      [userId, onResetTimerToDuration, setUserProfile]
-    );
-
     const handleSplitChange = useCallback(
       async (newSplitId: string) => {
-        console.log("handleSplitChange: Changing to split:", newSplitId);
-        const newSplit = getSplitById(newSplitId);
-        console.log("handleSplitChange: Got split:", newSplit);
-        setSelectedSplit(newSplit);
-        console.log("handleSplitChange: Updated selectedSplit state");
-
-        // Update local state
-        setUserProfile((prev) => (prev ? { ...prev, user_split_id: newSplitId } : null));
-
-        // Save to database
-        if (userId) {
-          try {
-            const { error } = await supabase
-              .from("profiles")
-              .update({ user_split_id: newSplitId })
-              .eq("id", userId);
-
-            if (error) {
-              console.error("Error updating user split:", error);
-            } else {
-              console.log("handleSplitChange: Successfully updated database");
-            }
-          } catch (error) {
-            console.error("Error updating user split:", error);
-          }
+        const newSplit = await saveSplitChange(newSplitId);
+        if (newSplit) {
+          setSelectedSplit(newSplit);
         }
       },
-      [setUserProfile, userId]
+      [saveSplitChange]
     );
 
     const handleExerciseClick = useCallback((exercise: Exercise) => {
@@ -404,186 +340,43 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
 
           <div className="col-span-1 space-y-6">
             <SocialFeatures />
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center space-x-3">
-                  <h3 className="text-xl font-semibold">Stats</h3>
-                  <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span>•</span>
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      {selectedSplit.name}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setShowAchievements(!showAchievements)}
-                    className="px-3 py-1.5 text-sm bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors">
-                    {showAchievements ? "Hide" : ""} Achievements
-                  </button>
-                  <button
-                    onClick={() => handleResetClick("game")}
-                    className="px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
-                    Reset Day
-                  </button>
-                </div>
-              </div>
-              <div className="flex justify-between items-center mb-4 pt-2 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-6">
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Today:</h4>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Sets</h4>
-                    <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                      {stats.totalSetsToday}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">Reps</h4>
-                    <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                      {stats.totalRepsToday}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center space-x-6">
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                      Streak:
-                    </h4>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                      Current
-                    </h4>
-                    <span className="text-xl font-bold text-orange-600 dark:text-orange-400">
-                      {userProfile?.stats?.streak || 0} days
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-md font-medium text-gray-700 dark:text-gray-300">
-                      Longest
-                    </h4>
-                    <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
-                      {userProfile?.stats?.longestStreak || 0} days
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <h4 className="text-md font-medium mb-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
-                Exercises:
-              </h4>
-              <div className="space-y-2">
-                {Object.entries(multipliers).map(([exerciseId, multiplier]) => {
-                  const exercise = getExerciseById(Number(exerciseId), selectedSplit.id);
-                  const repsToday = stats.repsPerExerciseToday[Number(exerciseId)] || 0;
-                  return (
-                    <div
-                      key={exerciseId}
-                      className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
-                      {/* Exercise Name (stays on the left) */}
-                      <button
-                        onClick={() => handleExerciseClick(exercise)}
-                        className="truncate text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer text-left flex-1"
-                        title={`Click to see instructions for ${exercise.name}`}>
-                        {exercise.name}
-                      </button>
-
-                      {/* NEW: A flex container for the stats on the right */}
-                      <div className="flex items-baseline gap-x-4">
-                        <span className="w-20 text-right text-sm text-gray-600 dark:text-gray-300">
-                          Reps:{" "}
-                          <b>
-                            <i>{repsToday}</i>
-                          </b>
-                        </span>
-                        <span className="w-8 text-right font-semibold text-blue-600 dark:text-blue-400">
-                          {multiplier}x
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <DashboardStatsPanel
+              selectedSplit={selectedSplit}
+              multipliers={multipliers}
+              stats={stats}
+              userProfile={userProfile}
+              showAchievements={showAchievements}
+              onToggleAchievements={() => setShowAchievements(!showAchievements)}
+              onResetDay={() => handleResetClick("game")}
+              onExerciseClick={handleExerciseClick}
+            />
           </div>
         </div>
 
-        {/* Achievement Notifications */}
-        {unlockedAchievements.map((achievementId, index) => (
-          <AchievementNotification
-            key={`${achievementId}-${index}`}
-            achievementId={achievementId}
-            index={index}
-            onClose={() => {
-              setUnlockedAchievements((prev) => prev.filter((id) => id !== achievementId));
-            }}
+        {stableUserProfile && (
+          <DashboardModals
+            showSettings={showSettings}
+            onCloseSettings={() => setShowSettings(false)}
+            userProfile={stableUserProfile}
+            timerDuration={stableUserProfile.timer_duration}
+            updateTimerDuration={updateTimerDuration}
+            notificationsEnabled={notificationsEnabled}
+            updateNotificationsEnabled={updateNotificationsEnabled}
+            onUserProfileUpdate={setUserProfile}
+            workoutCompleteModal={workoutCompleteModal}
+            showConfirmModal={showConfirmModal.show}
+            confirmModalType={showConfirmModal.type}
+            onConfirmReset={handleConfirmReset}
+            onCancelReset={handleCancelReset}
+            unlockedAchievements={unlockedAchievements}
+            onDismissAchievement={(id) =>
+              setUnlockedAchievements((prev) => prev.filter((achievementId) => achievementId !== id))
+            }
+            showExerciseModal={showExerciseModal}
+            selectedExercise={selectedExercise}
+            onCloseExerciseModal={() => setShowExerciseModal(false)}
           />
-        ))}
-
-        {showSettings && stableUserProfile && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
-                &times;
-              </button>
-              <SettingsPanel
-                timerDuration={stableUserProfile?.timer_duration}
-                updateTimerDuration={updateTimerDuration}
-                notificationsEnabled={notificationsEnabled}
-                updateNotificationsEnabled={updateNotificationsEnabled}
-                userProfile={stableUserProfile}
-                onClose={() => setShowSettings(false)}
-                onUserProfileUpdate={(updatedProfile) => {
-                  setUserProfile(updatedProfile);
-                }}
-              />
-            </div>
-          </div>
         )}
-
-        {workoutCompleteModal && (
-          <WorkoutCompleteModal heist={workoutCompleteModal.heist} />
-        )}
-
-        {showConfirmModal.show && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
-              <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-                Reset Day?
-              </h3>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">
-                {showConfirmModal.type === "game"
-                  ? "This will reset today's game progress, including multipliers and history."
-                  : "This will reset all exercise multipliers to 1x."}
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={handleCancelReset}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmReset}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
-                  Confirm
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Exercise Instructions Modal */}
-        <ExerciseInstructionsModal
-          exercise={selectedExercise}
-          isOpen={showExerciseModal}
-          onClose={() => setShowExerciseModal(false)}
-        />
       </div>
     );
   },
