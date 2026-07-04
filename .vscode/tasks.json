@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "dev",
+      "problemMatcher": [],
+      "label": "Run Development Server",
+      "detail": "vite"
+    },
+    {
+      "label": "Run All Tests",
+      "type": "shell",
+      "command": "npm run test:all",
+      "problemMatcher": [],
+      "group": "test",
+      "detail": "Frontend (Vitest) + backend (Jest). Fails the task on any test failure."
+    },
+    {
+      "type": "npm",
+      "script": "build",
+      "problemMatcher": [],
+      "label": "Build for Production",
+      "detail": "vite build"
+    },
+    {
+      "type": "shell",
+      "command": "netlify deploy --prod --dir=dist",
+      "problemMatcher": [],
+      "label": "Deploy to Production",
+      "detail": "Run tests, build, then deploy to Netlify",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": ["Run All Tests", "Build for Production"],
+      "dependsOrder": "sequence"
+    },
+    {
+      "label": "Start Backend Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Start the backend server using npm run dev in the backend directory."
+    }
+  ]
+}

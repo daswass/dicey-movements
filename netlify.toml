@@ -1,0 +1,13 @@
+[build]
+  command = "npm run test:all && npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/service-worker.js"
+  to = "/service-worker.js"
+  status = 200

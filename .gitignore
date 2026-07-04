@@ -74,7 +74,8 @@ lerna-debug.log*
 
 # IDEs and editors
 .idea
-.vscode/
+.vscode/*
+!.vscode/tasks.json
 .netlify/
 
 # System Files
