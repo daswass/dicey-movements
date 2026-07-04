@@ -262,16 +262,19 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       let restartTimerId: ReturnType<typeof setTimeout>;
 
       const restartWorkout = () => {
-        setWorkoutCompleteModal(null);
-        setCurrentWorkoutComplete(false);
-        setTimerComplete(false);
-        sessionStorage.removeItem("openedFromNotification");
-        resetNotificationFlags();
-        onStartTimer();
-        setLatestSession(null);
-        setIsRollAndStartMode(false);
-        setIsCompletingWorkout(false);
-        console.log("Dashboard: Optimistically restarted timer after workout complete");
+        try {
+          setWorkoutCompleteModal(null);
+          setCurrentWorkoutComplete(false);
+          setTimerComplete(false);
+          sessionStorage.removeItem("openedFromNotification");
+          resetNotificationFlags();
+          onStartTimer();
+          setLatestSession(null);
+          setIsRollAndStartMode(false);
+          console.log("Dashboard: Optimistically restarted timer after workout complete");
+        } finally {
+          setIsCompletingWorkout(false);
+        }
       };
 
       const scheduleRestart = (delayMs: number) => {
@@ -392,6 +395,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
         }
       })();
     }, [
+      isCompletingWorkout,
       latestSession,
       user?.id,
       multipliers,

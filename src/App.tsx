@@ -1,6 +1,6 @@
 import { Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, Route, BrowserRouter as Router, Routes } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { Link, Route, BrowserRouter as Router, Routes, useLocation } from "react-router-dom";
 import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
 import { FriendActivity } from "./components/FriendActivity";
@@ -27,6 +27,42 @@ import { supabase } from "./utils/supabaseClient";
 import { timerSyncService, type TimerState } from "./utils/timerSyncService";
 
 const TIMER_SOUND_PATH = "/sounds/timer-beep.mp3";
+
+function RouteAwareFriendEffects({
+  userProfileId,
+  refreshPendingFriendRequests,
+  setPendingFriendRequests,
+  setShowFriendRequestNotification,
+}: {
+  userProfileId: string | undefined;
+  refreshPendingFriendRequests: () => Promise<void>;
+  setPendingFriendRequests: Dispatch<SetStateAction<number>>;
+  setShowFriendRequestNotification: Dispatch<SetStateAction<boolean>>;
+}) {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!userProfileId) return;
+
+    fetchPendingFriendRequests().then((requests) => {
+      setPendingFriendRequests(requests);
+      if (requests > 0 && location.pathname === "/") {
+        setShowFriendRequestNotification(true);
+        setTimeout(() => {
+          setShowFriendRequestNotification(false);
+        }, 5000);
+      }
+    });
+  }, [userProfileId, setPendingFriendRequests, setShowFriendRequestNotification, location.pathname]);
+
+  useEffect(() => {
+    if (location.pathname === "/friends") {
+      refreshPendingFriendRequests();
+    }
+  }, [location.pathname, refreshPendingFriendRequests]);
+
+  return null;
+}
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -633,28 +669,7 @@ function App() {
     }
   }, [timerComplete, notifyTimerExpired]);
 
-  useEffect(() => {
-    fetchPendingFriendRequests().then((requests) => {
-      setPendingFriendRequests(requests);
-      // Show notification if there are pending requests and user is on dashboard
-      if (requests > 0 && window.location.pathname === "/") {
-        setShowFriendRequestNotification(true);
-        // Auto-hide notification after 5 seconds
-        setTimeout(() => {
-          setShowFriendRequestNotification(false);
-        }, 5000);
-      }
-    });
-  }, [userProfile?.id]);
-
-  // Refresh pending requests when navigating to Friends page
-  useEffect(() => {
-    if (window.location.pathname === "/friends") {
-      refreshPendingFriendRequests();
-    }
-  }, [window.location.pathname, refreshPendingFriendRequests]);
-
-  // Handle timer sync state changes
+  // Cleanup timer sync when component unmounts
   useEffect(() => {
     const handleTimerStateChange = (state: TimerState) => {
       if (state.startTime && state.masterDeviceId && !isTimerActive && state.duration > 0) {
@@ -734,6 +749,12 @@ function App() {
 
   return (
     <Router>
+      <RouteAwareFriendEffects
+        userProfileId={userProfile?.id}
+        refreshPendingFriendRequests={refreshPendingFriendRequests}
+        setPendingFriendRequests={setPendingFriendRequests}
+        setShowFriendRequestNotification={setShowFriendRequestNotification}
+      />
       <div className="min-h-screen bg-gray-900 text-white">
         {/* Fixed Header Navigation */}
         {/* Moved padding to nav itself */}

@@ -11,7 +11,7 @@ const Auth: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [view, setView] = useState<"login" | "signup">("login");
-  const [user, setUser] = useState<any>(supabase.auth.getUser());
+  const [user, setUser] = useState<any>(null);
 
   // Listen for auth changes
   React.useEffect(() => {

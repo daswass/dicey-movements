@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
 import { api } from "../utils/api";
-import { notificationService } from "../utils/notificationService";
+import { timerSyncService } from "../utils/timerSyncService";
 import { timerSyncService } from "../utils/timerSyncService";
 
 interface TimerProps {
@@ -119,7 +119,10 @@ const Timer: React.FC<TimerProps> = ({
     // Clear any old timer notifications when starting
     clearNotificationsSafely();
 
-    startTimer(duration); // Start with the full duration from props
+    startTimer(duration);
+    void timerSyncService.startTimerSync(duration).catch((error) => {
+      console.error("Timer: Error starting timer sync:", error);
+    });
   }, [startTimer, duration, clearNotificationsSafely]);
 
   const handleRollAndStart = useCallback(() => {
