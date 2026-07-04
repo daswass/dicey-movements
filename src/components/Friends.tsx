@@ -483,7 +483,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
                         {friend.profiles?.username || "Unknown User"}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {friend.profiles?.first_name || ""} {friend.profiles?.last_name || ""}G
+                        {friend.profiles?.first_name || ""} {friend.profiles?.last_name || ""}
                       </div>
                     </div>
                     <div className="flex space-x-2">
