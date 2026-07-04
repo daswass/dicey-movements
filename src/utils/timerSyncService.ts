@@ -128,6 +128,38 @@ class TimerSyncService {
     }
   }
 
+  // Clear synced timer session so a reset does not resume from elapsed DB time.
+  async resetTimerSync(): Promise<boolean> {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          timer_master_device_id: null,
+          timer_start_time: null,
+          timer_last_updated: now,
+        })
+        .eq("id", user.id);
+
+      if (error) {
+        console.error("TimerSyncService: Error resetting timer sync:", error);
+        return false;
+      }
+
+      this.isMaster = false;
+      this.lastSyncTime = now;
+      return true;
+    } catch (error) {
+      console.error("TimerSyncService: Error resetting timer sync:", error);
+      return false;
+    }
+  }
+
   // Transfer master to this device
   async becomeMaster(): Promise<boolean> {
     try {

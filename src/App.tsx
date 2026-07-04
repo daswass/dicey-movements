@@ -657,7 +657,7 @@ function App() {
   // Handle timer sync state changes
   useEffect(() => {
     const handleTimerStateChange = (state: TimerState) => {
-      if (state.startTime && !isTimerActive && state.duration > 0) {
+      if (state.startTime && state.masterDeviceId && !isTimerActive && state.duration > 0) {
         const startTime = new Date(state.startTime);
         const now = new Date();
         const elapsedMs = now.getTime() - startTime.getTime();

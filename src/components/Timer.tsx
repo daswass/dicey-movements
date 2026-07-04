@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
 import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
-import { supabase } from "../utils/supabaseClient";
+import { timerSyncService } from "../utils/timerSyncService";
 
 interface TimerProps {
   duration: number; // The initial total duration for progress calculation (from user profile)
@@ -148,33 +148,12 @@ const Timer: React.FC<TimerProps> = ({
   const handleReset = useCallback(() => {
     console.log("Timer component - Reset button clicked.");
     stopTimer();
-    // Reset to full duration using the context's reset function
     resetTimerToDuration(duration);
     clearNotificationsSafely();
 
-    // Clear database timer sync fields so refresh doesn't pick up old state
-    const clearTimerSync = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          await supabase
-            .from("profiles")
-            .update({
-              timer_master_device_id: null,
-              timer_last_updated: new Date().toISOString(),
-              // Don't clear timer_start_time - it should persist
-            })
-            .eq("id", user.id);
-          console.log("Timer: Cleared database timer sync fields");
-        }
-      } catch (error) {
-        console.error("Timer: Error clearing database timer sync fields:", error);
-      }
-    };
-
-    clearTimerSync();
+    void timerSyncService.resetTimerSync().catch((error) => {
+      console.error("Timer: Error clearing database timer sync fields:", error);
+    });
   }, [stopTimer, resetTimerToDuration, duration, clearNotificationsSafely]);
 
   // Redefine the state flags for accurate button display logic
