@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { getExerciseById, getExerciseEmoji } from "../data/exercises";
+import { getExerciseEmoji } from "../data/exercises";
 import { supabase } from "../utils/supabaseClient";
-import { Split } from "../types";
 
 interface Activity {
   id: string;
@@ -15,11 +14,7 @@ interface Activity {
   username: string;
 }
 
-interface FriendActivityProps {
-  selectedSplit: Split;
-}
-
-export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit }) => {
+export const FriendActivity: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +29,6 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // First get the user's friends
       const { data: friendsData, error: friendsError } = await supabase
         .from("friends")
         .select("friend_id")
@@ -48,16 +42,20 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
         friendIds.push(user.id);
       }
 
+      if (friendIds.length === 0) {
+        setActivities([]);
+        return;
+      }
+
       let query = supabase
         .from("activities")
         .select(`*, profiles!activities_user_id_fkey (username, first_name, last_name)`)
         .in("user_id", friendIds)
         .order("timestamp", { ascending: false });
 
-      // Apply time range filter if needed
       if (timeRange !== "all") {
         const now = new Date();
-        let startDate = new Date();
+        const startDate = new Date();
         switch (timeRange) {
           case "day":
             startDate.setDate(now.getDate() - 1);
@@ -72,9 +70,9 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
         query = query.gte("timestamp", startDate.toISOString());
       }
 
-      const { data, error } = await query;
+      const { data, error: queryError } = await query;
 
-      if (error) throw error;
+      if (queryError) throw queryError;
       setActivities(
         (data || []).map((activity) => ({
           ...activity,
@@ -102,7 +100,6 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
         <h2 className="text-2xl font-bold mb-2">Friend Activity</h2>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            {/* Self Activity Slider */}
             <label
               htmlFor="showOwnActivityToggle"
               className="flex items-center space-x-2 cursor-pointer">
@@ -111,7 +108,7 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
                 <input
                   type="checkbox"
                   id="showOwnActivityToggle"
-                  className="peer sr-only" // sr-only keeps it visually hidden
+                  className="peer sr-only"
                   checked={showOwnActivity}
                   onChange={(e) => setShowOwnActivity(e.target.checked)}
                 />
@@ -125,7 +122,6 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
 
           <div className="rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden shadow-sm">
             <div className="grid grid-cols-4">
-              {" "}
               {[
                 { label: "24h", value: "day" },
                 { label: "Week", value: "week" },
@@ -134,7 +130,7 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
               ].map((range) => (
                 <button
                   key={range.value}
-                  onClick={() => setTimeRange(range.value as any)}
+                  onClick={() => setTimeRange(range.value as typeof timeRange)}
                   className={`px-2 py-1 text-xs font-semibold focus:outline-none transition-colors duration-150
                     ${
                       timeRange === range.value
@@ -170,10 +166,8 @@ export const FriendActivity: React.FC<FriendActivityProps> = ({ selectedSplit })
                   <div>
                     <div className="font-medium">{activity.username}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {getExerciseEmoji(
-                        getExerciseById(activity.exercise_id, selectedSplit.id).name
-                      )}{" "}
-                      {activity.reps} {activity.exercise_name}
+                      {getExerciseEmoji(activity.exercise_name)} {activity.reps}{" "}
+                      {activity.exercise_name}
                       {activity.reps > 1 ? "s" : ""}
                     </div>
                   </div>

@@ -48,7 +48,7 @@ const SocialFeatures: React.FC<SocialFeaturesProps> = ({
         <Leaderboard />
       </div>
       <div className={`${activeTab === "friends" ? "block" : "hidden"}`}>
-        <FriendActivity selectedSplit={selectedSplit} />
+        <FriendActivity />
       </div>
     </div>
   );
