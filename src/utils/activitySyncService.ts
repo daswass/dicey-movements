@@ -77,7 +77,7 @@ class ActivitySyncService {
       this.channelManager.subscribe(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "activities",
         },
@@ -90,7 +90,7 @@ class ActivitySyncService {
       this.channelManager.subscribe(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "oura_activities",
         },

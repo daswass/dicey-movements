@@ -11,36 +11,37 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 async function syncAllOuraData() {
   console.log("Starting Oura data sync for all users...");
 
-  try {
-    // Get all users with Oura integration
-    const { data: ouraUsers, error } = await supabase.from("oura_tokens").select("user_id");
+  // Get all users with Oura integration
+  const { data: ouraUsers, error } = await supabase.from("oura_tokens").select("user_id");
 
-    if (error) {
-      console.error("Error fetching Oura users:", error);
-      return;
+  if (error) {
+    throw new Error(`Error fetching Oura users: ${error.message}`);
+  }
+
+  if (!ouraUsers || ouraUsers.length === 0) {
+    console.log("No users with Oura integration found.");
+    return;
+  }
+
+  console.log(`Found ${ouraUsers.length} users with Oura integration.`);
+  let errorCount = 0;
+
+  // Sync data for each user
+  for (const user of ouraUsers) {
+    try {
+      console.log(`Syncing data for user: ${user.user_id}`);
+      await OuraService.syncUserActivity(user.user_id, 7);
+      console.log(`Successfully synced data for user: ${user.user_id}`);
+    } catch (error) {
+      errorCount++;
+      console.error(`Failed to sync data for user ${user.user_id}:`, error);
     }
+  }
 
-    if (!ouraUsers || ouraUsers.length === 0) {
-      console.log("No users with Oura integration found.");
-      return;
-    }
+  console.log("Oura data sync completed.");
 
-    console.log(`Found ${ouraUsers.length} users with Oura integration.`);
-
-    // Sync data for each user
-    for (const user of ouraUsers) {
-      try {
-        console.log(`Syncing data for user: ${user.user_id}`);
-        await OuraService.syncUserActivity(user.user_id, 7);
-        console.log(`Successfully synced data for user: ${user.user_id}`);
-      } catch (error) {
-        console.error(`Failed to sync data for user ${user.user_id}:`, error);
-      }
-    }
-
-    console.log("Oura data sync completed.");
-  } catch (error) {
-    console.error("Error during Oura data sync:", error);
+  if (errorCount > 0) {
+    throw new Error(`${errorCount} Oura user sync(s) failed`);
   }
 }
 

@@ -87,6 +87,7 @@ const LeaderboardComponent: React.FC = () => {
   const [channelStatus, setChannelStatus] = useState<string>(UI_STATUS.DISCONNECTED);
   const [retryTrigger, setRetryTrigger] = useState(0);
   const isMountedRef = useRef(true);
+  const latestRequestRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Add ref to track if component has been fully initialized
   const isFullyInitializedRef = useRef(false);
@@ -111,7 +112,7 @@ const LeaderboardComponent: React.FC = () => {
   }, []);
 
   // Memoize the fetchActivityLeaderboard function to prevent recreation
-  const fetchActivityLeaderboard = useCallback(async () => {
+  const fetchActivityLeaderboard = useCallback(async (): Promise<LeaderboardEntry[]> => {
     let query = supabase
       .from("activities")
       .select(
@@ -197,11 +198,11 @@ const LeaderboardComponent: React.FC = () => {
       })
       .sort((a, b) => b.score - a.score);
 
-    setEntries(newEntries);
+    return newEntries;
   }, [scoreType, timeRange]);
 
   // Memoize the fetchOuraStepsLeaderboard function
-  const fetchOuraStepsLeaderboard = useCallback(async () => {
+  const fetchOuraStepsLeaderboard = useCallback(async (): Promise<LeaderboardEntry[]> => {
     // Get all users from profiles
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
@@ -210,8 +211,7 @@ const LeaderboardComponent: React.FC = () => {
     if (profilesError) throw profilesError;
 
     if (!profiles || profiles.length === 0) {
-      setEntries([]);
-      return;
+      return [];
     }
 
     let query = supabase.from("oura_activities").select("user_id, steps");
@@ -284,24 +284,30 @@ const LeaderboardComponent: React.FC = () => {
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    setEntries(newEntries);
+    return newEntries;
   }, [timeRange]);
 
   // Memoize the main fetchLeaderboard function
   const fetchLeaderboard = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
+
     try {
-      if (scoreType === "totalSteps") {
-        // Fetch Oura steps data
-        await fetchOuraStepsLeaderboard();
-      } else {
-        // Fetch regular activity data
-        await fetchActivityLeaderboard();
+      const newEntries =
+        scoreType === "totalSteps"
+          ? await fetchOuraStepsLeaderboard()
+          : await fetchActivityLeaderboard();
+
+      if (isMountedRef.current && requestId === latestRequestRef.current) {
+        setEntries(newEntries);
+        setError(null);
       }
     } catch (err) {
       console.error("Error fetching leaderboard:", err);
-      setError("Failed to load leaderboard");
+      if (isMountedRef.current && requestId === latestRequestRef.current) {
+        setError("Failed to load leaderboard");
+      }
     }
-  }, [scoreType, timeRange, fetchActivityLeaderboard, fetchOuraStepsLeaderboard]);
+  }, [scoreType, fetchActivityLeaderboard, fetchOuraStepsLeaderboard]);
 
   // Update localStorage when scoreType changes
   useEffect(() => {
@@ -355,7 +361,7 @@ const LeaderboardComponent: React.FC = () => {
       if (scoreType !== "totalSteps") {
         setTimeout(() => {
           if (isMountedRef.current) {
-            fetchLeaderboard();
+            fetchLeaderboardRef.current();
           }
         }, 100);
       }
@@ -366,7 +372,7 @@ const LeaderboardComponent: React.FC = () => {
       if (scoreType === "totalSteps") {
         setTimeout(() => {
           if (isMountedRef.current) {
-            fetchLeaderboard();
+            fetchLeaderboardRef.current();
           }
         }, 100);
       }
