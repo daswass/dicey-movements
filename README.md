@@ -86,6 +86,7 @@ A fitness PWA that combines dice-rolled workouts with timers, social competition
    - `create_activities_table.sql`
    - `create_zone_competition.sql` — zone scoring and `get_zone_captains()` RPC
    - `enable_activities_rls.sql` — row-level security on workout rows
+   - `backend/supabase/migrations/20260906000000_add_leaderboard_rpc.sql` — server-side leaderboard aggregation (required before deploying the current leaderboard UI)
 
 5. Start the dev server:
 
