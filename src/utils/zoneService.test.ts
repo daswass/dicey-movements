@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Zone grid helpers are pure; keep this unit suite independent of runtime Supabase credentials.
+vi.mock("./supabaseClient", () => ({
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(),
+  },
+}));
 import {
   UNNAMED_ZONE_DISPLAY,
   ZONE_GRID_SIZE,
