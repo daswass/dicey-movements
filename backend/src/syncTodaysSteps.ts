@@ -23,8 +23,7 @@ async function syncTodaysSteps() {
     .select("user_id, refresh_token, expires_at");
 
   if (usersError) {
-    console.error("Error fetching users:", usersError);
-    return;
+    throw new Error(`Error fetching users: ${usersError.message}`);
   }
 
   if (!users || users.length === 0) {
@@ -74,6 +73,13 @@ async function syncTodaysSteps() {
   console.log("--- Sync Complete ---");
   console.log(`Successfully synced: ${successCount}`);
   console.log(`Failed to sync: ${errorCount}`);
+
+  if (errorCount > 0) {
+    throw new Error(`${errorCount} Oura user sync(s) failed`);
+  }
 }
 
-syncTodaysSteps();
+syncTodaysSteps().catch((error) => {
+  console.error("Step sync failed:", error);
+  process.exitCode = 1;
+});

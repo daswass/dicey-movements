@@ -1,6 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion"; // Correct, modern import
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { activitySyncService } from "../utils/activitySyncService";
+import {
+  type LeaderboardEntry,
+  type LeaderboardRpcRow,
+  mapLeaderboardRows,
+} from "../utils/leaderboard";
 import { supabase } from "../utils/supabaseClient";
 import { SUPABASE_CHANNEL_STATUS, UI_STATUS } from "../utils/supabaseChannel";
 
@@ -52,41 +57,19 @@ const setStoredTimeRange = (timeRange: "day" | "week" | "month" | "all") => {
   }
 };
 
-interface LeaderboardEntry {
-  id: string;
-  user_id: string;
-  username: string;
-  score: number;
-  location: string;
-  timestamp: string;
-  scoreChange?: "increase" | "decrease";
-}
-
-interface Activity {
-  user_id: string;
-  reps: number;
-  multiplier: number;
-  timestamp: string;
-  profiles: {
-    username: string;
-    location: {
-      city: string;
-    };
-  } | null;
-}
-
 type ScoreType = "totalReps" | "totalSets" | "totalSteps";
+type TimeRange = "day" | "week" | "month" | "all";
 
 const LeaderboardComponent: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scoreType, setScoreType] = useState<ScoreType>(getStoredScoreType);
-  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">(getStoredTimeRange);
+  const [timeRange, setTimeRange] = useState<TimeRange>(getStoredTimeRange);
 
   const previousEntriesRef = useRef<Map<string, number>>(new Map());
   const [channelStatus, setChannelStatus] = useState<string>(UI_STATUS.DISCONNECTED);
-  const [retryTrigger, setRetryTrigger] = useState(0);
   const isMountedRef = useRef(true);
+  const latestRequestRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Add ref to track if component has been fully initialized
   const isFullyInitializedRef = useRef(false);
@@ -110,198 +93,45 @@ const LeaderboardComponent: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Memoize the fetchActivityLeaderboard function to prevent recreation
-  const fetchActivityLeaderboard = useCallback(async () => {
-    let query = supabase
-      .from("activities")
-      .select(
-        `
-        user_id,
-        reps,
-        multiplier,
-        timestamp,
-        profiles!activities_user_id_fkey (
-          username,
-          location
-        )
-      `
-      )
-      .order("timestamp", { ascending: false });
+  const fetchLeaderboardEntries = useCallback(async (): Promise<LeaderboardEntry[]> => {
+    const { data, error } = await supabase.rpc("get_leaderboard", {
+      p_metric: scoreType,
+      p_time_range: timeRange,
+    });
 
-    if (timeRange !== "all") {
-      const now = new Date();
-      let startDate = new Date();
-      switch (timeRange) {
-        case "day":
-          startDate.setDate(now.getDate() - 1);
-          break;
-        case "week":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "month":
-          startDate.setMonth(now.getMonth() - 1);
-          break;
-      }
-      query = query.gte("timestamp", startDate.toISOString());
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
 
-    const userScores = new Map<
-      string,
-      { totalReps: number; totalSets: number; location: string; username: string }
-    >();
-
-    (data as unknown as Activity[]).forEach((activity) => {
-      const userId = activity.user_id;
-      const currentScores = userScores.get(userId) || {
-        totalReps: 0,
-        totalSets: 0,
-        location: activity.profiles?.location?.city || "Unknown",
-        username: activity.profiles?.username || "Unknown User",
-      };
-      currentScores.totalReps += activity.reps;
-      currentScores.totalSets += 1;
-      userScores.set(userId, currentScores);
-    });
-
-    const previousScores = new Map(previousEntriesRef.current);
-
-    const newEntries: LeaderboardEntry[] = Array.from(userScores.entries())
-      .map(([userId, scores]) => {
-        const currentScore = scoreType === "totalReps" ? scores.totalReps : scores.totalSets;
-        const previousScore = previousScores.get(userId);
-        let scoreChange: "increase" | "decrease" | undefined;
-
-        if (previousScore !== undefined && currentScore !== previousScore) {
-          scoreChange = currentScore > previousScore ? "increase" : "decrease";
-          // Delay updating the previous score to allow the flash animation to complete
-          setTimeout(() => {
-            previousEntriesRef.current.set(userId, currentScore);
-          }, 1000); // 1 second to match the CSS animation duration
-        } else {
-          // Only update immediately if there's no change
-          previousEntriesRef.current.set(userId, currentScore);
-        }
-
-        return {
-          id: userId,
-          user_id: userId,
-          username: scores.username,
-          score: currentScore,
-          location: scores.location,
-          timestamp: new Date().toISOString(),
-          scoreChange: scoreChange,
-        };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    setEntries(newEntries);
-  }, [scoreType, timeRange]);
-
-  // Memoize the fetchOuraStepsLeaderboard function
-  const fetchOuraStepsLeaderboard = useCallback(async () => {
-    // Get all users from profiles
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, username, location");
-
-    if (profilesError) throw profilesError;
-
-    if (!profiles || profiles.length === 0) {
-      setEntries([]);
-      return;
-    }
-
-    let query = supabase.from("oura_activities").select("user_id, steps");
-
-    if (timeRange === "day") {
-      // For the "24h" view, we only want today's steps.
-      // The background job keeps this data fresh.
-      const todayStr = new Date().toISOString().split("T")[0];
-      query = query.eq("date", todayStr);
-    } else {
-      // For other views, calculate the date range
-      const now = new Date();
-      let startDate = new Date();
-      switch (timeRange) {
-        case "week":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "month":
-          startDate.setMonth(now.getMonth() - 1);
-          break;
-        case "all":
-          startDate = new Date(0); // Beginning of time
-          break;
+    return mapLeaderboardRows(
+      (data ?? []) as LeaderboardRpcRow[],
+      previousEntriesRef.current,
+      new Date().toISOString(),
+      (userId, score) => {
+        // Delay updating the previous score to allow the flash animation to complete.
+        setTimeout(() => {
+          previousEntriesRef.current.set(userId, score);
+        }, 1000); // 1 second to match the CSS animation duration
       }
-      const startDateStr = startDate.toISOString().split("T")[0];
-      const endDateStr = now.toISOString().split("T")[0];
-      query = query.gte("date", startDateStr).lte("date", endDateStr);
-    }
-
-    const { data: ouraActivities, error: activitiesError } = await query;
-
-    if (activitiesError) throw activitiesError;
-
-    // Calculate total steps per user
-    const userSteps = new Map<string, number>();
-    ouraActivities?.forEach((activity) => {
-      const currentSteps = userSteps.get(activity.user_id) || 0;
-      userSteps.set(activity.user_id, currentSteps + activity.steps);
-    });
-
-    // Create entries for all users, with 0 steps for those without Oura data
-    const previousScores = new Map(previousEntriesRef.current);
-    const newEntries: LeaderboardEntry[] = profiles
-      .map((profile) => {
-        const steps = userSteps.get(profile.id) || 0;
-        const previousScore = previousScores.get(profile.id);
-        let scoreChange: "increase" | "decrease" | undefined;
-
-        if (previousScore !== undefined && steps !== previousScore) {
-          scoreChange = steps > previousScore ? "increase" : "decrease";
-          // Delay updating the previous score to allow the flash animation to complete
-          setTimeout(() => {
-            previousEntriesRef.current.set(profile.id, steps);
-          }, 1000); // 1 second to match the CSS animation duration
-        } else {
-          // Only update immediately if there's no change
-          previousEntriesRef.current.set(profile.id, steps);
-        }
-
-        return {
-          id: profile.id,
-          user_id: profile.id,
-          username: profile.username,
-          score: steps,
-          location: profile.location?.city || "Unknown",
-          timestamp: new Date().toISOString(),
-          scoreChange: scoreChange,
-        };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    setEntries(newEntries);
-  }, [timeRange]);
+    );
+  }, [scoreType, timeRange]);
 
   // Memoize the main fetchLeaderboard function
   const fetchLeaderboard = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
+
     try {
-      if (scoreType === "totalSteps") {
-        // Fetch Oura steps data
-        await fetchOuraStepsLeaderboard();
-      } else {
-        // Fetch regular activity data
-        await fetchActivityLeaderboard();
+      const newEntries = await fetchLeaderboardEntries();
+
+      if (isMountedRef.current && requestId === latestRequestRef.current) {
+        setEntries(newEntries);
+        setError(null);
       }
     } catch (err) {
       console.error("Error fetching leaderboard:", err);
-      setError("Failed to load leaderboard");
+      if (isMountedRef.current && requestId === latestRequestRef.current) {
+        setError("Failed to load leaderboard");
+      }
     }
-  }, [scoreType, timeRange, fetchActivityLeaderboard, fetchOuraStepsLeaderboard]);
+  }, [fetchLeaderboardEntries]);
 
   // Update localStorage when scoreType changes
   useEffect(() => {
@@ -317,12 +147,6 @@ const LeaderboardComponent: React.FC = () => {
   useEffect(() => {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
-
-  // Trigger initial realtime setup on mount
-  useEffect(() => {
-    // This will trigger the realtime useEffect to run once on mount
-    setRetryTrigger(1);
-  }, []);
 
   // Mark component as fully initialized after first data fetch
   useEffect(() => {
@@ -350,23 +174,23 @@ const LeaderboardComponent: React.FC = () => {
 
   // Subscribe to activity sync service for real-time updates
   useEffect(() => {
-    const unsubscribe = activitySyncService.subscribe((activity) => {
+    const unsubscribe = activitySyncService.subscribe(() => {
       // Refresh leaderboard data when new activities are added
       if (scoreType !== "totalSteps") {
         setTimeout(() => {
           if (isMountedRef.current) {
-            fetchLeaderboard();
+            fetchLeaderboardRef.current();
           }
         }, 100);
       }
     });
 
-    const unsubscribeOura = activitySyncService.subscribeToOura((activity) => {
+    const unsubscribeOura = activitySyncService.subscribeToOura(() => {
       // Refresh leaderboard data when new Oura activities are added
       if (scoreType === "totalSteps") {
         setTimeout(() => {
           if (isMountedRef.current) {
-            fetchLeaderboard();
+            fetchLeaderboardRef.current();
           }
         }, 100);
       }
@@ -482,7 +306,7 @@ const LeaderboardComponent: React.FC = () => {
               ].map((range) => (
                 <button
                   key={range.value}
-                  onClick={() => handleTimeRangeChange(range.value as any)}
+                  onClick={() => handleTimeRangeChange(range.value as TimeRange)}
                   className={`px-2 py-1 text-xs font-semibold focus:outline-none transition-colors duration-150
                     ${
                       timeRange === range.value
