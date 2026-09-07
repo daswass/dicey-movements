@@ -1,6 +1,5 @@
 import { AchievementDefinition, achievements } from "../data/achievements";
 import { supabase } from "./supabaseClient";
-import { api } from "./api";
 
 export interface AchievementProgress {
   achievementId: string;
@@ -274,21 +273,6 @@ export class AchievementService {
         })
         .eq("id", userId);
 
-      // Send push notification for achievement unlock
-      try {
-        await api.fetch("/api/push/send", {
-          method: "POST",
-          body: JSON.stringify({
-            userId,
-            payload: {
-              type: "achievement",
-              achievementName: achievement.name,
-            },
-          }),
-        });
-      } catch (error) {
-        console.error("Error sending achievement notification:", error);
-      }
     } catch (error) {
       console.error("Error unlocking achievement:", error);
     }

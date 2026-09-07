@@ -12,6 +12,7 @@ import { createOuraOAuthState, verifyOuraOAuthState } from "./oauthState";
 import { OuraService } from "./ouraService";
 import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
+import { isValidOuraWebhookToken } from "./webhookAuth";
 
 // Load environment variables
 dotenv.config();
@@ -23,8 +24,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 // Initialize environment variables
-const ouraWebhookVerificationToken =
-  process.env.OURA_WEBHOOK_VERIFICATION_TOKEN || "placeholder-verification-token";
+const ouraWebhookVerificationToken = process.env.OURA_WEBHOOK_VERIFICATION_TOKEN;
 
 // Middleware
 app.use(
@@ -155,7 +155,7 @@ app.delete("/api/oura/disconnect/:userId", requireAuth, requireSelfParam("userId
 app.get("/api/oura/webhook", (req, res) => {
   const { verification_token, challenge } = req.query;
 
-  if (verification_token === ouraWebhookVerificationToken) {
+  if (isValidOuraWebhookToken(verification_token, ouraWebhookVerificationToken)) {
     console.log(`Oura webhook verification request received. Responding with challenge.`);
     res.json({ challenge });
   } else {
@@ -166,14 +166,19 @@ app.get("/api/oura/webhook", (req, res) => {
 
 // Handles incoming data events from Oura
 app.post("/api/oura/webhook", (req, res) => {
+  const { verification_token, event_type, data_type, object_id, user_id } = req.body ?? {};
+
+  if (!isValidOuraWebhookToken(verification_token, ouraWebhookVerificationToken)) {
+    console.warn("Rejected Oura webhook with invalid verification token");
+    return res.status(401).send("Invalid verification token");
+  }
+
   // Immediately respond to Oura with a 200 OK to acknowledge receipt.
   res.status(200).send("Event received");
 
   // Process the event asynchronously to avoid holding up the request.
   (async () => {
     try {
-      const { event_type, data_type, object_id, user_id } = req.body;
-
       console.log(
         `Received ${data_type} ${event_type} event for user ${user_id} from Oura webhook.`
       );
@@ -273,13 +278,13 @@ app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, r
   try {
     const { userId, payload } = req.body;
 
-    if (!userId || !payload) {
+    if (!userId || !payload || typeof payload !== "object") {
       return res.status(400).json({ error: "userId and payload are required" });
     }
 
     let success = false;
 
-    // Handle different notification types
+    // Only allow self-service intents whose content is fully constructed server-side.
     if (payload.type === "clear_notifications") {
       // Send a silent notification that will clear existing notifications by tag
       const clearPayload = {
@@ -287,38 +292,19 @@ app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, r
         body: "", // Empty body for silent notification
         icon: "/favicon.svg",
         badge: "/favicon.svg",
-        tag: payload.clearTag || payload.tag,
+        tag: typeof payload.clearTag === "string" ? payload.clearTag.slice(0, 100) : undefined,
         silent: true, // Standard Web Push Protocol flag for silent notifications
         data: {
           type: "clear_notifications",
-          clearTag: payload.clearTag || payload.tag,
+          clearTag:
+            typeof payload.clearTag === "string" ? payload.clearTag.slice(0, 100) : undefined,
         },
       };
       success = await pushNotificationService.sendNotification(userId, clearPayload);
     } else if (payload.type === "timer_expired") {
       success = await pushNotificationService.sendTimerExpiredNotification(userId);
-    } else if (payload.type === "achievement") {
-      success = await pushNotificationService.sendAchievementNotification(
-        userId,
-        payload.achievementName
-      );
-    } else if (payload.type === "friend_activity") {
-      success = await pushNotificationService.sendFriendActivityNotification(
-        userId,
-        payload.friendName,
-        payload.activity,
-        payload.friendId
-      );
-    } else if (payload.type === "friend_request") {
-      success = await pushNotificationService.sendFriendRequestNotification(
-        userId,
-        payload.friendName
-      );
-    } else if (payload.type === "high_five") {
-      success = await pushNotificationService.sendHighFiveNotification(userId, payload.friendName);
     } else {
-      // Default to generic notification
-      success = await pushNotificationService.sendNotification(userId, payload);
+      return res.status(400).json({ error: "Unsupported notification type" });
     }
 
     if (success) {
