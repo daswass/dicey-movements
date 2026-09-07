@@ -349,29 +349,6 @@ class NotificationService {
             userId,
             payload: {
               type: "timer_expired",
-              title: "⏰ Timer Expired!",
-              body: "Your workout timer has finished! Time to get movin'!",
-              icon: "/favicon.svg",
-              badge: "/favicon.svg",
-              tag: "timer-notification",
-              group: "dicey-movements",
-              requireInteraction: true,
-              actions: [
-                {
-                  action: "start-workout",
-                  title: "Start Workout",
-                  icon: "/favicon.svg",
-                },
-                {
-                  action: "dismiss",
-                  title: "Dismiss",
-                },
-              ],
-              data: {
-                url: "/",
-                timestamp: Date.now(),
-                type: "timer_expired",
-              },
             },
           }),
         });
@@ -385,40 +362,6 @@ class NotificationService {
         error
       );
       // Don't re-throw - this is not critical for app functionality
-    }
-  }
-
-  async sendHighFiveNotification(toUserId: string, friendName: string): Promise<void> {
-    console.log("NotificationService: sendHighFiveNotification called for user:", toUserId);
-
-    try {
-      await api.fetch("/api/push/send", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: toUserId,
-          payload: {
-            type: "high_five",
-            title: "", // Silent notification
-            body: "", // Silent notification
-            icon: "/favicon.svg",
-            badge: "/favicon.svg",
-            tag: "high_five",
-            group: "dicey-movements",
-            silent: true, // Make it silent
-            data: {
-              url: "/",
-              timestamp: Date.now(),
-              type: "high_five",
-              friendName,
-            },
-          },
-        }),
-      });
-    } catch (error) {
-      console.warn(
-        "NotificationService: Failed to send high five notification (backend may be hibernated):",
-        error
-      );
     }
   }
 
@@ -577,10 +520,6 @@ class NotificationService {
             userId,
             payload: {
               type: "clear_notifications",
-              title: "", // Empty title for silent notification
-              body: "", // Empty body for silent notification
-              silent: true, // Standard Web Push Protocol flag for silent notifications
-              tag: tag,
               clearTag: tag,
             },
           }),
