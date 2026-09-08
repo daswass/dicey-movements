@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTimerWorker } from "../contexts/TimerWorkerContext";
 import { api } from "../utils/api";
-import { timerSyncService } from "../utils/timerSyncService";
+import { notificationService } from "../utils/notificationService";
 import { timerSyncService } from "../utils/timerSyncService";
 
 interface TimerProps {

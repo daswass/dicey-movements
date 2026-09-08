@@ -36,6 +36,30 @@ describe("timerSyncService", () => {
     HTMLCanvasElement.prototype.toDataURL = vi.fn(() => "data:image/png;base64,test");
   });
 
+  it("hydrates the authoritative server timer immediately when polling starts", async () => {
+    const { timerSyncService } = await import("./timerSyncService");
+    const state = {
+      masterDeviceId: "remote-device",
+      startTime: "2026-07-04T12:00:00.000Z",
+      duration: 300,
+      lastUpdated: "2026-07-04T12:00:00.000Z",
+    };
+    const getTimerState = vi.spyOn(timerSyncService, "getTimerState").mockResolvedValue(state);
+    const onStateChange = vi.fn();
+
+    await timerSyncService.startPolling(onStateChange);
+
+    expect(getTimerState).toHaveBeenCalledTimes(1);
+    expect(onStateChange).toHaveBeenCalledWith(state);
+
+    // timer_last_updated does not change while a remote timer simply elapses,
+    // so a foreground resume must still re-apply the authoritative state.
+    await timerSyncService.refreshState();
+    expect(onStateChange).toHaveBeenCalledTimes(2);
+    expect(onStateChange).toHaveBeenLastCalledWith(state);
+    timerSyncService.stopPolling();
+  });
+
   it("resetTimerSync clears master device and start time", async () => {
     const { timerSyncService } = await import("./timerSyncService");
 

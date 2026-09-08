@@ -46,6 +46,30 @@ describe("resolveSyncTimerAction", () => {
     expect(action).toEqual({ type: "resume", remainingSeconds: 240 });
   });
 
+  it("resumes a fresh mobile reload from the server start time instead of the profile duration", () => {
+    const action = resolveSyncTimerAction({
+      state: activeState,
+      isTimerActive: false,
+      timerComplete: false,
+      isMaster: false,
+      nowMs: Date.parse("2026-07-04T12:01:30.000Z"),
+    });
+
+    expect(action).toEqual({ type: "resume", remainingSeconds: 210 });
+  });
+
+  it("recalculates a suspended local worker from elapsed server time on resume", () => {
+    const action = resolveSyncTimerAction({
+      state: activeState,
+      isTimerActive: true,
+      timerComplete: false,
+      isMaster: false,
+      nowMs: Date.parse("2026-07-04T12:04:59.000Z"),
+    });
+
+    expect(action).toEqual({ type: "resume", remainingSeconds: 1 });
+  });
+
   it("marks timer complete when synced state has elapsed", () => {
     const action = resolveSyncTimerAction({
       state: activeState,

@@ -17,6 +17,7 @@ import {
   sendHighFive,
 } from "./utils/socialService";
 import { timerSyncService } from "./utils/timerSyncService";
+import { shouldApplyProfileTimerDefault } from "./utils/timerHydrationLogic";
 
 const Friends = lazy(() => import("./components/Friends").then((m) => ({ default: m.Friends })));
 const FriendActivity = lazy(() =>
@@ -108,7 +109,8 @@ function App() {
     setCurrentWorkoutComplete,
   });
 
-  useTimerSync({
+  const { timerHydrated } = useTimerSync({
+    userId: session?.user.id,
     timerComplete,
     setTimerComplete,
     isTimerActive,
@@ -285,12 +287,13 @@ function App() {
       // Check if we opened from a notification
       const openedFromNotification = sessionStorage.getItem("openedFromNotification") === "true";
 
-      if (
-        !isTimerActive &&
-        (timeLeft === 0 || timeLeft !== userProfile.timer_duration) &&
-        userProfile.timer_duration > 0 &&
-        !openedFromNotification
-      ) {
+      if (shouldApplyProfileTimerDefault({
+        hydrated: timerHydrated,
+        isTimerActive,
+        timeLeft,
+        duration: userProfile.timer_duration,
+        openedFromNotification,
+      })) {
         setTimeLeft(userProfile.timer_duration);
       }
       // Don't clear the flag here - let it be cleared when actually used
@@ -306,6 +309,7 @@ function App() {
     userProfile?.notifications_enabled,
     isTimerActive,
     timeLeft,
+    timerHydrated,
     setTimeLeft,
   ]);
 
@@ -434,7 +438,11 @@ function App() {
           />
         ))}
 
-        {settings ? (
+        {!timerHydrated ? (
+          <div className="p-4 text-center text-gray-500">
+            <p>Syncing timer state...</p>
+          </div>
+        ) : settings ? (
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route

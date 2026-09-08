@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { resolveSyncTimerAction } from "../utils/timerSyncLogic";
 import { timerSyncService } from "../utils/timerSyncService";
 
 interface UseTimerSyncOptions {
+  userId: string | undefined;
   timerComplete: boolean;
   setTimerComplete: (value: boolean) => void;
   isTimerActive: boolean;
@@ -14,6 +15,7 @@ interface UseTimerSyncOptions {
 }
 
 export function useTimerSync({
+  userId,
   timerComplete,
   setTimerComplete,
   isTimerActive,
@@ -23,12 +25,12 @@ export function useTimerSync({
   startWorkerTimer,
   stopWorkerTimer,
 }: UseTimerSyncOptions) {
+  const [timerHydrated, setTimerHydrated] = useState(false);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        setTimeout(() => {
-          timerSyncService.refreshState();
-        }, 1000);
+        void timerSyncService.refreshState();
       }
     };
 
@@ -76,9 +78,22 @@ export function useTimerSync({
       }
     };
 
-    timerSyncService.startPolling(handleTimerStateChange);
+    let cancelled = false;
+    setTimerHydrated(false);
+
+    if (!userId) {
+      setTimerHydrated(true);
+      return;
+    }
+
+    void timerSyncService.startPolling(handleTimerStateChange).finally(() => {
+      if (!cancelled) {
+        setTimerHydrated(true);
+      }
+    });
 
     return () => {
+      cancelled = true;
       timerSyncService.stopPolling();
     };
   }, [
@@ -90,6 +105,7 @@ export function useTimerSync({
     setCurrentWorkoutComplete,
     stopWorkerTimer,
     startWorkerTimer,
+    userId,
   ]);
 
   useEffect(() => {
@@ -100,4 +116,6 @@ export function useTimerSync({
       timerSyncService.stopPolling();
     };
   }, []);
+
+  return { timerHydrated };
 }
