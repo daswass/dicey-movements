@@ -1,6 +1,6 @@
 import cors from "cors";
 import dotenv from "dotenv";
-import express from "express";
+import express, { Request } from "express";
 import rateLimit from "express-rate-limit";
 import {
   requireAuth,
@@ -10,6 +10,11 @@ import {
 } from "./authMiddleware";
 import { createOuraOAuthState, verifyOuraOAuthState } from "./oauthState";
 import { OuraService } from "./ouraService";
+import {
+  isValidOuraWebhookSignature,
+  OuraWebhookReplayProtector,
+  parseOuraWebhookEvent,
+} from "./ouraWebhook";
 import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
 import { isValidOuraWebhookToken } from "./webhookAuth";
@@ -25,6 +30,7 @@ app.set("trust proxy", 1);
 
 // Initialize environment variables
 const ouraWebhookVerificationToken = process.env.OURA_WEBHOOK_VERIFICATION_TOKEN;
+const ouraWebhookReplayProtector = new OuraWebhookReplayProtector();
 
 // Middleware
 app.use(
@@ -40,7 +46,15 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buffer) => {
+      if (req.url?.split("?")[0] === "/api/oura/webhook") {
+        (req as Request).rawBody = Buffer.from(buffer);
+      }
+    },
+  })
+);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -166,27 +180,44 @@ app.get("/api/oura/webhook", (req, res) => {
 
 // Handles incoming data events from Oura
 app.post("/api/oura/webhook", (req, res) => {
-  const { verification_token, event_type, data_type, object_id, user_id } = req.body ?? {};
-
-  if (!isValidOuraWebhookToken(verification_token, ouraWebhookVerificationToken)) {
-    console.warn("Rejected Oura webhook with invalid verification token");
-    return res.status(401).send("Invalid verification token");
+  if (
+    !isValidOuraWebhookSignature(
+      req.rawBody,
+      req.headers["x-oura-signature"],
+      process.env.OURA_CLIENT_SECRET
+    )
+  ) {
+    console.warn("Rejected Oura webhook with invalid signature");
+    return res.status(401).send("Invalid webhook signature");
   }
 
-  // Immediately respond to Oura with a 200 OK to acknowledge receipt.
+  const event = parseOuraWebhookEvent(req.body);
+  if (!event) {
+    console.warn("Rejected Oura webhook with invalid event schema");
+    return res.status(400).send("Invalid webhook event");
+  }
+
+  if (ouraWebhookReplayProtector.isReplay(event)) {
+    console.warn("Ignored replayed Oura webhook event");
+    return res.status(200).send("Duplicate event ignored");
+  }
+
+  // Acknowledge only after authenticity, schema, and replay checks pass.
   res.status(200).send("Event received");
 
   // Process the event asynchronously to avoid holding up the request.
   (async () => {
     try {
+      const { event_type, data_type, object_id, user_id } = event;
+
       console.log(
-        `Received ${data_type} ${event_type} event for user ${user_id} from Oura webhook.`
+        `Received ${data_type} ${event_type} event ${object_id} for user ${user_id} from Oura webhook.`
       );
 
       if (user_id) {
         const internalUserId = await OuraService.getInternalUserId(user_id);
         if (internalUserId) {
-          const date = new Date().toISOString().split("T")[0];
+          const date = new Date(event.event_datetime).toISOString().split("T")[0];
           await OuraService.syncUserActivityForDay(internalUserId, date);
         } else {
           console.warn(
@@ -284,7 +315,7 @@ app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, r
 
     let success = false;
 
-    // Only allow self-service intents whose content is fully constructed server-side.
+    // Clients can invoke only narrow self-service intents; server owns all notification content.
     if (payload.type === "clear_notifications") {
       // Send a silent notification that will clear existing notifications by tag
       const clearPayload = {
@@ -320,7 +351,7 @@ app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, r
 
 app.post("/api/workout/complete", requireAuth, requireSelfBody("userId"), async (req, res) => {
   try {
-    const { userId, exercise, reps, multipliers } = req.body;
+    const { userId, exercise, reps } = req.body;
 
     if (!userId || !exercise || !reps) {
       return res.status(400).json({ error: "userId, exercise, and reps are required" });
