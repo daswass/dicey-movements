@@ -1,5 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { logOuraError } from "./ouraError";
 
 // Load environment variables
 dotenv.config();
@@ -22,7 +23,6 @@ async function setupWebhooks() {
 
   console.log("🔧 Setting up webhook subscriptions for the application...");
   console.log(`📡 Webhook URL: ${OURA_WEBHOOK_URL}`);
-  console.log(`🔑 Using client ID: ${OURA_CLIENT_ID}`);
 
   for (const dataType of dataTypes) {
     try {
@@ -72,10 +72,10 @@ async function setupWebhooks() {
             console.log(`   Could not retrieve existing subscription details`);
           }
         } else {
-          console.error(`❌ Failed to create subscription for ${dataType}:`, errorData);
+          logOuraError(`Failed to create Oura subscription for ${dataType}`, error);
         }
       } else {
-        console.error(`❌ Failed to create subscription for ${dataType}:`, error);
+        logOuraError(`Failed to create Oura subscription for ${dataType}`, error);
       }
     }
   }
@@ -88,4 +88,4 @@ async function setupWebhooks() {
 }
 
 // Run the setup
-setupWebhooks().catch(console.error);
+setupWebhooks().catch((error) => logOuraError("Oura webhook setup failed", error));

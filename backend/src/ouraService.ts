@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import { randomBytes } from "crypto";
 import dotenv from "dotenv";
+import { logOuraError, toSafeOuraError } from "./ouraError";
 
 // Load environment variables first
 dotenv.config();
@@ -73,14 +74,8 @@ export class OuraService {
 
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        console.error("Oura API Error:", {
-          status: error.response.status,
-          data: error.response.data,
-        });
-        throw new Error(`Oura API Error: ${JSON.stringify(error.response.data)}`);
-      }
-      throw error;
+      logOuraError("Oura OAuth code exchange failed", error);
+      throw toSafeOuraError(error);
     }
   }
 
@@ -170,7 +165,7 @@ export class OuraService {
 
     if (error) {
       if (error.code !== "PGRST116") {
-        console.error("Error fetching tokens:", error);
+        logOuraError("Error fetching Oura tokens", error);
       }
       return null;
     }
@@ -227,11 +222,11 @@ export class OuraService {
         );
 
         if (error) {
-          console.error(`Failed to save activity for ${activity.day}:`, error);
+          logOuraError(`Failed to save Oura activity for ${activity.day}`, error);
         }
       }
     } catch (error) {
-      console.error(`Failed to sync Oura activity for user ${userId}:`, error);
+      logOuraError(`Failed to sync Oura activity for user ${userId}`, error);
       throw error;
     }
   }
@@ -256,7 +251,7 @@ export class OuraService {
     if (error) {
       // Log if it's not the "no rows" error, which is expected if no user is found.
       if (error.code !== "PGRST116") {
-        console.error(`Error fetching internal user for Oura ID ${ouraUserId}:`, error);
+        logOuraError(`Error fetching internal user for Oura ID ${ouraUserId}`, error);
       }
       return null;
     }
@@ -296,7 +291,7 @@ export class OuraService {
         console.log(`Webhook: No new activity data found for user ${internalUserId} on ${day}.`);
       }
     } catch (error) {
-      console.error(`Webhook: Failed to sync data for user ${internalUserId}:`, error);
+      logOuraError(`Webhook: Failed to sync data for user ${internalUserId}`, error);
       // We don't re-throw here to prevent a single user's failure from stopping a potential loop.
     }
   }

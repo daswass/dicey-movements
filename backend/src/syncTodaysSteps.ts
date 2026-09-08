@@ -1,6 +1,7 @@
 import { OuraService } from "./ouraService";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { classifyOuraError, logOuraError } from "./ouraError";
 
 dotenv.config();
 
@@ -66,7 +67,9 @@ async function syncTodaysSteps() {
         console.log(`No activity data for today for user ${user.user_id}.`);
       }
     } catch (error) {
-      console.error(`Failed to sync data for user ${user.user_id}:`, error);
+      // Do not serialize Axios/Oura errors here: they can include OAuth tokens and
+      // client credentials. The user ID and classification remain actionable.
+      logOuraError(`Scheduled Oura sync failed for user ${user.user_id}`, error);
       errorCount++;
     }
   }
@@ -80,6 +83,6 @@ async function syncTodaysSteps() {
 }
 
 syncTodaysSteps().catch((error) => {
-  console.error("Step sync failed:", error);
+  console.error(`Step sync failed [${classifyOuraError(error)}]`);
   process.exitCode = 1;
 });
