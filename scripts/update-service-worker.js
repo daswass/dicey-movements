@@ -2,7 +2,7 @@
 
 /**
  * Post-build script to update service worker timestamp for better cache busting
- * This ensures iOS PWAs get fresh content after each deployment
+ * This gives each deployment a distinct cache while the app controls when it activates
  */
 
 import fs from "fs";
@@ -34,7 +34,7 @@ function updateServiceWorker() {
     fs.writeFileSync(SW_PATH, updatedContent, "utf8");
 
     console.log(`✅ Service worker updated with timestamp: ${newTimestamp}`);
-    console.log(`📱 iOS PWA cache will be invalidated on next visit`);
+    console.log(`📱 Cache version prepared; active clients update only after user confirmation`);
   } catch (error) {
     console.error("❌ Error updating service worker:", error.message);
     process.exit(1);

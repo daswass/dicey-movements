@@ -108,14 +108,6 @@ export function useTimerSync({
     userId,
   ]);
 
-  useEffect(() => {
-    return () => {
-      if (timerSyncService.isDeviceMasterSync()) {
-        timerSyncService.stopTimerSync();
-      }
-      timerSyncService.stopPolling();
-    };
-  }, []);
 
   return { timerHydrated };
 }

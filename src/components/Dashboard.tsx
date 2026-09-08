@@ -8,6 +8,7 @@ import { useWorkoutComplete } from "../hooks/useWorkoutComplete";
 import { useWorkoutHistory } from "../hooks/useWorkoutHistory";
 import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient";
+import { clearPendingWorkout, restorePendingWorkout, savePendingWorkout } from "../utils/workoutRecovery";
 import DashboardModals from "./DashboardModals";
 import DashboardStatsPanel from "./DashboardStatsPanel";
 import History from "./History";
@@ -76,6 +77,10 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     }, [exerciseCounts]);
 
     const [latestSession, setLatestSession] = useState<WorkoutSession | null>(null);
+
+    useEffect(() => {
+      setLatestSession(userId ? restorePendingWorkout(userId) : null);
+    }, [userId]);
     const [showSettings, setShowSettings] = useState(false);
     const [workoutCompleteModal, setWorkoutCompleteModal] = useState<WorkoutCompleteModalState | null>(
       null
@@ -123,8 +128,9 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       sessionStorage.removeItem("openedFromNotification");
       resetNotificationFlags();
       setLatestSession(null);
+      if (userId) clearPendingWorkout(userId);
       setIsRollAndStartMode(true); // Enable roll and start mode to trigger dice rolling
-    }, [resetNotificationFlags]);
+    }, [resetNotificationFlags, setCurrentWorkoutComplete, setTimerComplete, userId]);
 
     const handleWorkoutComplete = useWorkoutComplete({
       userId,
@@ -155,6 +161,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       }
 
       setLatestSession(null);
+      if (userId) clearPendingWorkout(userId);
       setCurrentWorkoutComplete(false);
       setTimerComplete(false);
       // Clear notification flags for new timer session
@@ -257,13 +264,14 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const handleDiceRoll = useCallback(
       (session: WorkoutSession) => {
         setCurrentWorkoutComplete(false);
+        if (userId) savePendingWorkout(userId, session);
         setLatestSession(session);
 
         if (isRollAndStartMode) {
           setIsRollAndStartMode(false);
         }
       },
-      [isRollAndStartMode]
+      [isRollAndStartMode, setCurrentWorkoutComplete, userId]
     );
 
     const handleSplitChange = useCallback(
