@@ -17,7 +17,7 @@ interface WorkoutFlowProps {
   selectedSplit: Split;
   isMaster: boolean;
   isCompletingWorkout: boolean;
-  showSettings: boolean;
+  completionError: string | null;
   showSplitsPanel: boolean;
   onToggleSettings: () => void;
   onToggleSplitsPanel: () => void;
@@ -39,7 +39,7 @@ export default function WorkoutFlow({
   selectedSplit,
   isMaster,
   isCompletingWorkout,
-  showSettings,
+  completionError,
   showSplitsPanel,
   onToggleSettings,
   onToggleSplitsPanel,
@@ -74,6 +74,13 @@ export default function WorkoutFlow({
             {isCompletingWorkout ? "Completing..." : "Complete Exercise"}
           </button>
         </div>
+        {completionError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+            {completionError}
+          </p>
+        )}
         <ExerciseDisplay session={latestSession} onComplete={onWorkoutComplete} />
       </div>
     );

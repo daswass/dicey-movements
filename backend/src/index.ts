@@ -17,6 +17,11 @@ import {
 } from "./ouraWebhook";
 import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
+import {
+  recordWorkoutCompletion,
+  runWorkoutCompletionEffects,
+  validateWorkoutCompletion,
+} from "./workoutCompletionService";
 import { isValidOuraWebhookToken } from "./webhookAuth";
 
 // Load environment variables
@@ -349,108 +354,30 @@ app.post("/api/push/send", requireAuth, requireSelfBody("userId"), async (req, r
   }
 });
 
-app.post("/api/workout/complete", requireAuth, requireSelfBody("userId"), async (req, res) => {
+app.post("/api/workout/complete", requireAuth, async (req, res) => {
   try {
-    const { userId, exercise, reps } = req.body;
+    validateWorkoutCompletion(req.body);
+    const userId = req.authUser!.id;
+    const completion = await recordWorkoutCompletion(supabase, userId, req.body);
 
-    if (!userId || !exercise || !reps) {
-      return res.status(400).json({ error: "userId, exercise, and reps are required" });
-    }
-
-    // Get user's profile to check notification settings
-    const { data: userProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("notification_settings, first_name, last_name")
-      .eq("id", userId)
-      .single();
-
-    if (profileError) {
-      console.error("Error fetching user profile:", profileError);
-      return res.status(500).json({ error: "Failed to fetch user profile" });
-    }
-
-    const userName = `${userProfile.first_name} ${userProfile.last_name}`;
-    const activity = `${exercise} (${reps} reps)`;
-
-    // Get user's friends
-    const { data: friends, error: friendsError } = await supabase
-      .from("friends")
-      .select("user_id")
-      .eq("friend_id", userId)
-      .eq("status", "accepted");
-
-    if (friendsError) {
-      console.error("Error fetching friends:", friendsError);
-      return res.status(500).json({ error: "Failed to fetch friends" });
-    }
-
-    // Get notification settings for all friends to filter those with friend_activity enabled
-    const friendIds = friends.map((friend) => friend.user_id);
-    const { data: friendProfiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, notification_settings")
-      .in("id", friendIds);
-
-    if (profilesError) {
-      console.error("Error fetching friend profiles:", profilesError);
-      return res.status(500).json({ error: "Failed to fetch friend profiles" });
-    }
-
-    // Filter friends who have friend_activity notifications enabled
-    const friendsWithNotificationsEnabled = friendProfiles.filter((profile) => {
-      const settings = profile.notification_settings || {};
-      return settings.friend_activity === true;
-    });
-
-    // Return early if no friends have notifications enabled
-    if (friendsWithNotificationsEnabled.length === 0) {
-      console.log(
-        "No friends have friend activity notifications enabled, skipping notification sending"
-      );
-      return res.json({
-        success: true,
-        message:
-          "Workout completed (no notifications sent - no friends have notifications enabled)",
-        notifications: {
-          sent: 0,
-          failed: 0,
-        },
-      });
-    }
-
-    // Send friend activity notifications to friends with notifications enabled
-    const notificationPromises = friendsWithNotificationsEnabled.map(async (friend) => {
-      try {
-        const success = await pushNotificationService.sendFriendActivityNotification(
-          friend.id,
-          userName,
-          activity,
-          userId // Pass the original user's ID as the friendId for the high five action
-        );
-        return { userId: friend.id, success };
-      } catch (error) {
-        console.error(`Error sending notification to friend ${friend.id}:`, error);
-        return { userId: friend.id, success: false };
-      }
-    });
-
-    const results = await Promise.allSettled(notificationPromises);
-    const successful = results.filter(
-      (result) => result.status === "fulfilled" && result.value.success
-    ).length;
-    const failed = results.length - successful;
-
-    console.log(`Friend activity notifications sent: ${successful} successful, ${failed} failed`);
-
-    res.json({
+    // The activity and its one-shot effect record are committed before this response is sent.
+    // Effects run out-of-band so a push-provider failure cannot make the client retry an
+    // already durable workout.
+    res.status(completion.created ? 201 : 200).json({
       success: true,
-      message: "Workout completed and notifications sent",
-      notifications: {
-        sent: successful,
-        failed: failed,
-      },
+      created: completion.created,
+      activity: completion.activity,
     });
+
+    if (completion.created) {
+      void runWorkoutCompletionEffects(supabase, pushNotificationService, userId, req.body).catch(
+        (error) => console.error("Error running workout completion effects:", error)
+      );
+    }
   } catch (error) {
+    if (error instanceof Error && /must be|is required|between 1 and 6|ISO date/.test(error.message)) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error("Error completing workout:", error);
     res.status(500).json({ error: "Failed to complete workout" });
   }
