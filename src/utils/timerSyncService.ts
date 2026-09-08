@@ -224,11 +224,12 @@ class TimerSyncService {
   }
 
   // Start real-time subscription for timer updates
-  startPolling(onStateChange: (state: TimerState) => void, intervalMs: number = 5000): void {
+  async startPolling(onStateChange: (state: TimerState) => void): Promise<void> {
     this.currentStateChangeCallback = onStateChange;
 
     // Prevent duplicate polling intervals; realtime can reconnect via channel manager
     if (this.syncInterval) {
+      await this.refreshState();
       return;
     }
 
@@ -246,6 +247,10 @@ class TimerSyncService {
         this.handleStateChange(state, onStateChange);
       }
     }, 30000); // 30 seconds as backup
+
+    // Do not wait for realtime or fallback polling before reconciling a new
+    // client. A mobile reload must use the persisted timer start time first.
+    await this.refreshState();
   }
 
   // Force refresh state after reconnection
@@ -253,7 +258,7 @@ class TimerSyncService {
     try {
       const state = await this.getTimerState();
       if (state && this.currentStateChangeCallback) {
-        this.handleStateChange(state, this.currentStateChangeCallback);
+        this.handleStateChange(state, this.currentStateChangeCallback, true);
       }
     } catch (error) {
       console.error("TimerSyncService: Error refreshing state:", error);
@@ -297,9 +302,13 @@ class TimerSyncService {
     }
   }
 
-  private handleStateChange(state: TimerState, onStateChange: (state: TimerState) => void): void {
+  private handleStateChange(
+    state: TimerState,
+    onStateChange: (state: TimerState) => void,
+    force: boolean = false
+  ): void {
     // Prevent duplicate processing of the same state
-    if (state.lastUpdated === this.lastSyncTime) {
+    if (!force && state.lastUpdated === this.lastSyncTime) {
       return;
     }
 

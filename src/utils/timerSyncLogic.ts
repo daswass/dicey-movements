@@ -29,7 +29,7 @@ export function resolveSyncTimerAction(params: {
 }): SyncTimerAction {
   const { state, isTimerActive, timerComplete, isMaster, nowMs } = params;
 
-  if (state.startTime && state.masterDeviceId && !isTimerActive && state.duration > 0) {
+  if (state.startTime && state.masterDeviceId && state.duration > 0) {
     const remainingSeconds = computeRemainingSecondsFromSync(
       state.startTime,
       state.duration,
@@ -37,6 +37,9 @@ export function resolveSyncTimerAction(params: {
     );
 
     if (remainingSeconds > 0) {
+      // The server start time is authoritative. Recalculate even when the
+      // local worker believes it is already running: mobile browsers can
+      // suspend that worker while the app is backgrounded.
       return { type: "resume", remainingSeconds };
     }
 
