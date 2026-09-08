@@ -5,6 +5,7 @@ import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
 import { getUserLocation } from "../utils/socialService";
 import { supabase } from "../utils/supabaseClient";
+import { clearPendingWorkout } from "../utils/workoutRecovery";
 import { buildZoneFromLocation, checkDiceHeist } from "../utils/zoneService";
 import type { Dispatch, SetStateAction } from "react";
 import { WorkoutCompleteHeistInfo } from "../components/WorkoutCompleteModal";
@@ -124,6 +125,7 @@ export function useWorkoutComplete({
         sessionStorage.removeItem("openedFromNotification");
         resetNotificationFlags();
         onStartTimer();
+        clearPendingWorkout(userId);
         setLatestSession(null);
         setIsRollAndStartMode(false);
         setIsCompletingWorkout(false);

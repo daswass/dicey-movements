@@ -1,5 +1,5 @@
-// Service Worker for Push Notifications with Better Cache Management
-// This service worker follows standard practices and ensures updates are delivered
+// Service Worker for push notifications and offline assets.
+// Updates wait for the in-app prompt so an active workout is never interrupted.
 
 // Use a timestamp-based cache name that changes with each deployment
 const CACHE_VERSION = Date.now().toString();
@@ -12,9 +12,6 @@ const CACHE_BUST = `?v=${CACHE_VERSION}`;
 // Files to cache for offline functionality (excluding index.html to ensure updates)
 const STATIC_FILES = ["/favicon.svg", "/manifest.json"];
 
-// iOS-specific: Force cache invalidation on every activation
-const FORCE_REFRESH = true;
-
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
   console.log("Service Worker: Installing new version", CACHE_VERSION);
@@ -26,8 +23,6 @@ self.addEventListener("install", (event) => {
         console.log("Service Worker: Caching static files");
         return cache.addAll(STATIC_FILES);
       }),
-      // Skip waiting to activate immediately
-      self.skipWaiting(),
     ])
   );
 });
@@ -51,14 +46,6 @@ self.addEventListener("activate", (event) => {
       }),
       // Claim all clients immediately
       self.clients.claim(),
-      // iOS-specific: Force refresh all clients
-      FORCE_REFRESH
-        ? self.clients.matchAll().then((clients) => {
-            clients.forEach((client) => {
-              client.postMessage({ type: "FORCE_REFRESH", version: CACHE_VERSION });
-            });
-          })
-        : Promise.resolve(),
     ])
   );
 });
