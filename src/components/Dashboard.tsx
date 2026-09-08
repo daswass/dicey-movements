@@ -6,7 +6,6 @@ import { useProfileSettings } from "../hooks/useProfileSettings";
 import { useTimerMasterStatus } from "../hooks/useTimerMasterStatus";
 import { useWorkoutComplete } from "../hooks/useWorkoutComplete";
 import { useWorkoutHistory } from "../hooks/useWorkoutHistory";
-import { api } from "../utils/api";
 import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient";
 import DashboardModals from "./DashboardModals";
@@ -47,8 +46,6 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const userId = userProfile?.id;
     const isMaster = useTimerMasterStatus();
     const {
-      history,
-      setHistory,
       exerciseCounts,
       lastSessionStart,
       sessionHistory,
@@ -91,6 +88,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     const [showAchievements, setShowAchievements] = useState(false);
     const [isRollAndStartMode, setIsRollAndStartMode] = useState(false);
     const [isCompletingWorkout, setIsCompletingWorkout] = useState(false);
+    const [completionError, setCompletionError] = useState<string | null>(null);
     const [showExerciseModal, setShowExerciseModal] = useState(false);
     const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
     const [showSplitsPanel, setShowSplitsPanel] = useState(false);
@@ -116,21 +114,8 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setCurrentWorkoutComplete(false);
     }, [setTimerComplete, setCurrentWorkoutComplete]);
 
-    const handleRollAndStart = useCallback(async () => {
+    const handleRollAndStart = useCallback(() => {
       console.log("Dashboard: Roll and Start button clicked");
-      if (latestSession) {
-        try {
-          await api.completeWorkout(
-            userId,
-            latestSession.exercise.name,
-            latestSession.reps,
-            multipliers
-          );
-          await fetchHistory();
-        } catch (error) {
-          console.error("Error completing workout:", error);
-        }
-      }
 
       setCurrentWorkoutComplete(false);
       setTimerComplete(false);
@@ -139,29 +124,20 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       resetNotificationFlags();
       setLatestSession(null);
       setIsRollAndStartMode(true); // Enable roll and start mode to trigger dice rolling
-    }, [
-      latestSession,
-      userId,
-      multipliers,
-      fetchHistory,
-      setUserProfile,
-      resetNotificationFlags,
-    ]);
+    }, [resetNotificationFlags]);
 
     const handleWorkoutComplete = useWorkoutComplete({
       userId,
       latestSession,
-      multipliers,
       isCompletingWorkout,
       setIsCompletingWorkout,
+      setCompletionError,
       setWorkoutCompleteModal,
       setCurrentWorkoutComplete,
       setTimerComplete,
       setLatestSession,
       setIsRollAndStartMode,
-      setUnlockedAchievements,
       setUserProfile,
-      setHistory,
       fetchHistory,
       resetNotificationFlags,
       onStartTimer,
@@ -324,7 +300,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               selectedSplit={selectedSplit}
               isMaster={isMaster}
               isCompletingWorkout={isCompletingWorkout}
-              showSettings={showSettings}
+              completionError={completionError}
               showSplitsPanel={showSplitsPanel}
               onToggleSettings={() => setShowSettings(!showSettings)}
               onToggleSplitsPanel={() => setShowSplitsPanel(!showSplitsPanel)}
@@ -337,7 +313,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
               }}
               onWorkoutComplete={handleWorkoutComplete}
             />
-            <History history={sessionHistory as any[]} selectedSplit={selectedSplit} />
+            <History history={sessionHistory} />
             {showAchievements && (
               <Suspense
                 fallback={

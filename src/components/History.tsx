@@ -13,7 +13,7 @@ interface Activity {
   dice_roll?: {
     exerciseDie?: number;
     repsDie?: number;
-  };
+  } | null;
 }
 
 interface HistoryProps {

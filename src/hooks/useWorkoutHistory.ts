@@ -10,7 +10,10 @@ export interface WorkoutActivity {
   exercise_name: string;
   reps: number;
   multiplier: number;
-  dice_roll: unknown;
+  dice_roll: {
+    exerciseDie?: number;
+    repsDie?: number;
+  } | null;
 }
 
 export function useWorkoutHistory(userId: string | undefined, isMaster: boolean) {

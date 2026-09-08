@@ -87,6 +87,7 @@ A fitness PWA that combines dice-rolled workouts with timers, social competition
    - `create_zone_competition.sql` — zone scoring and `get_zone_captains()` RPC
    - `enable_activities_rls.sql` — row-level security on workout rows
    - `backend/supabase/migrations/20260906000000_add_leaderboard_rpc.sql` — server-side leaderboard aggregation (required before deploying the current leaderboard UI)
+   - `backend/supabase/migrations/20260908000000_durable_workout_completion.sql` — required before deploying the durable workout-completion API; creates the idempotency and post-commit effect RPCs
 
 5. Start the dev server:
 

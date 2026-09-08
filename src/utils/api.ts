@@ -1,5 +1,22 @@
 import { getAccessToken } from "./authSession";
 
+export interface WorkoutCompletionRequest {
+  activityId: string;
+  timestamp: string;
+  exerciseId: number;
+  exerciseName: string;
+  reps: number;
+  multiplier: number;
+  diceRoll: { exerciseDie: number; repsDie: number };
+  zoneId?: string | null;
+}
+
+export interface WorkoutCompletionResponse {
+  success: true;
+  created: boolean;
+  activity: WorkoutCompletionRequest & { user_id: string };
+}
+
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -82,10 +99,10 @@ export const api = {
     });
   },
 
-  async completeWorkout(userId: string, exercise: string, reps: number, multipliers?: unknown) {
+  async completeWorkout(completion: WorkoutCompletionRequest): Promise<WorkoutCompletionResponse> {
     return this.fetch("/api/workout/complete", {
       method: "POST",
-      body: JSON.stringify({ userId, exercise, reps, multipliers }),
+      body: JSON.stringify(completion),
     });
   },
 };
