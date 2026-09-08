@@ -10,6 +10,7 @@ import {
 } from "./authMiddleware";
 import { createOuraOAuthState, verifyOuraOAuthState } from "./oauthState";
 import { OuraService } from "./ouraService";
+import { logOuraError } from "./ouraError";
 import {
   isValidOuraWebhookSignature,
   OuraWebhookReplayProtector,
@@ -79,7 +80,7 @@ app.get("/api/oura/auth-url", requireAuth, async (req, res) => {
 
     res.json({ authUrl });
   } catch (error) {
-    console.error("Error generating auth URL:", error);
+    logOuraError("Error generating Oura auth URL", error);
     res.status(500).json({ error: "Failed to generate authorization URL" });
   }
 });
@@ -111,13 +112,11 @@ app.get("/api/oura/callback", async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
     res.redirect(`${frontendUrl}?oura=success`);
   } catch (error) {
-    console.error("Error in Oura callback:", error);
+    logOuraError("Error in Oura callback", error);
     // Redirect to frontend with error status
     const frontendUrl = process.env.FRONTEND_URL || "https://dicey-movements.netlify.app";
     res.redirect(
-      `${frontendUrl}?oura=error&message=${encodeURIComponent(
-        error instanceof Error ? error.message : String(error)
-      )}`
+      `${frontendUrl}?oura=error&message=${encodeURIComponent("Unable to complete Oura connection")}`
     );
   }
 });
@@ -132,7 +131,7 @@ app.get("/api/oura/status/:userId", requireAuth, requireSelfParam("userId"), asy
       hasValidToken: tokens ? !OuraService.isTokenExpired(tokens.expires_at) : false,
     });
   } catch (error) {
-    console.error("Error checking Oura status:", error);
+    logOuraError("Error checking Oura status", error);
     res.status(500).json({ error: "Failed to check Oura status" });
   }
 });
@@ -146,7 +145,7 @@ app.post("/api/oura/sync/:userId", requireAuth, requireSelfParam("userId"), asyn
 
     res.json({ success: true, message: "Activity data synced successfully" });
   } catch (error) {
-    console.error("Error syncing Oura activity:", error);
+    logOuraError("Error syncing Oura activity", error);
     res.status(500).json({ error: "Failed to sync activity data" });
   }
 });
@@ -159,7 +158,7 @@ app.delete("/api/oura/disconnect/:userId", requireAuth, requireSelfParam("userId
 
     res.json({ success: true, message: "Oura integration disconnected" });
   } catch (error) {
-    console.error("Error disconnecting Oura:", error);
+    logOuraError("Error disconnecting Oura", error);
     res.status(500).json({ error: "Failed to disconnect Oura integration" });
   }
 });
@@ -226,7 +225,7 @@ app.post("/api/oura/webhook", (req, res) => {
         }
       }
     } catch (error) {
-      console.error("Error processing Oura webhook:", error);
+      logOuraError("Error processing Oura webhook", error);
     }
   })();
 });

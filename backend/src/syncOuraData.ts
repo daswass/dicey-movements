@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { OuraService } from "./ouraService";
 import dotenv from "dotenv";
+import { classifyOuraError, logOuraError } from "./ouraError";
 
 dotenv.config();
 
@@ -34,7 +35,9 @@ async function syncAllOuraData() {
       console.log(`Successfully synced data for user: ${user.user_id}`);
     } catch (error) {
       errorCount++;
-      console.error(`Failed to sync data for user ${user.user_id}:`, error);
+      // Keep the scheduled job actionable without logging Axios request bodies,
+      // authorization headers, or OAuth credentials.
+      logOuraError(`Scheduled Oura sync failed for user ${user.user_id}`, error);
     }
   }
 
@@ -53,7 +56,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((error) => {
-      console.error("Sync script failed:", error);
+      console.error(`Oura scheduled sync failed [${classifyOuraError(error)}]`);
       process.exit(1);
     });
 }
