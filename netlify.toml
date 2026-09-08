@@ -11,3 +11,5 @@
   from = "/service-worker.js"
   to = "/service-worker.js"
   status = 200
+
+# Merges to main intentionally trigger the Netlify production deploy.
