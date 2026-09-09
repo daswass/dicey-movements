@@ -16,6 +16,26 @@ export interface WorkoutActivity {
   } | null;
 }
 
+/**
+ * Multipliers are scoped to the active game session. Before the session boundary is loaded,
+ * return an empty count rather than treating the complete activity archive as today. That makes
+ * an early roll safe (1x) while the profile/history bootstrap finishes.
+ */
+export function countExercisesSinceSession(
+  activities: WorkoutActivity[],
+  lastSessionStart: Date | null
+): Record<number, number> {
+  if (!lastSessionStart) return {};
+
+  const counts: Record<number, number> = {};
+  for (const activity of activities) {
+    if (new Date(activity.timestamp) > lastSessionStart) {
+      counts[activity.exercise_id] = (counts[activity.exercise_id] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
 export function useWorkoutHistory(userId: string | undefined, isMaster: boolean) {
   const [history, setHistory] = useState<WorkoutActivity[]>([]);
   const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
@@ -46,18 +66,9 @@ export function useWorkoutHistory(userId: string | undefined, isMaster: boolean)
       return;
     }
 
-    const currentExerciseCounts: Record<number, number> = {};
-    const currentLastSessionStart = lastSessionStart;
-
-    (data || []).forEach((activity) => {
-      if (!currentLastSessionStart || new Date(activity.timestamp) > currentLastSessionStart) {
-        currentExerciseCounts[activity.exercise_id] =
-          (currentExerciseCounts[activity.exercise_id] || 0) + 1;
-      }
-    });
-
-    setHistory(data || []);
-    setExerciseCounts(currentExerciseCounts);
+    const activities = (data || []) as WorkoutActivity[];
+    setHistory(activities);
+    setExerciseCounts(countExercisesSinceSession(activities, lastSessionStart));
   }, [userId, lastSessionStart]);
 
   useEffect(() => {
