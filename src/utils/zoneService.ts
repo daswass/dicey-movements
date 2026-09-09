@@ -6,6 +6,8 @@ export const UNNAMED_ZONE_DISPLAY = "Unnamed Zone";
 
 /** ~2km grid cells at mid-latitudes. Keeps zones neighborhood-sized. */
 export const ZONE_GRID_SIZE = 0.02;
+/** The server enforces the same bound so map panning cannot become an all-world query. */
+export const MAX_ZONE_VIEWPORT_CELLS = 10_000;
 
 const CAPTAIN_COLORS = [
   "#3B82F6",
@@ -255,80 +257,77 @@ export function getZonesInBounds(
   return zones;
 }
 
-export async function fetchZoneCaptains(): Promise<ZoneCaptain[]> {
-  const { data, error } = await supabase.rpc("get_zone_captains");
-
-  if (error) {
-    console.warn("zoneService: RPC unavailable, falling back to client aggregation", error);
-    return fetchZoneCaptainsFallback();
-  }
-
-  return (data || []).map(
-    (row: {
-      zone_id: string;
-      captain_user_id: string;
-      captain_username: string;
-      total_reps: number;
-    }) => ({
-      zoneId: row.zone_id,
-      captainUserId: row.captain_user_id,
-      captainUsername: row.captain_username,
-      totalReps: Number(row.total_reps),
-    })
-  );
+export interface ZoneViewport {
+  minLatIndex: number;
+  maxLatIndex: number;
+  minLngIndex: number;
+  maxLngIndex: number;
 }
 
-async function fetchZoneCaptainsFallback(): Promise<ZoneCaptain[]> {
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
+export function getZoneViewport(
+  south: number,
+  west: number,
+  north: number,
+  east: number,
+  padding = 1
+): ZoneViewport | null {
+  const minLatIndex = Math.floor(south / ZONE_GRID_SIZE) - padding;
+  const maxLatIndex = Math.floor(north / ZONE_GRID_SIZE) + padding;
+  const minLngIndex = Math.floor(west / ZONE_GRID_SIZE) - padding;
+  const maxLngIndex = Math.floor(east / ZONE_GRID_SIZE) + padding;
+  const cellCount = (maxLatIndex - minLatIndex + 1) * (maxLngIndex - minLngIndex + 1);
 
-  const { data, error } = await supabase
-    .from("activities")
-    .select("zone_id, user_id, reps, profiles(username)")
-    .gte("timestamp", weekAgo.toISOString())
-    .not("zone_id", "is", null);
+  if (
+    maxLatIndex - minLatIndex + 1 > 150 ||
+    maxLngIndex - minLngIndex + 1 > 150 ||
+    cellCount > MAX_ZONE_VIEWPORT_CELLS
+  ) return null;
+  return { minLatIndex, maxLatIndex, minLngIndex, maxLngIndex };
+}
 
-  if (error || !data) {
-    console.error("zoneService: failed to fetch activities for captains", error);
+function mapZoneCaptain(row: {
+  zone_id: string;
+  captain_user_id: string;
+  captain_username: string;
+  total_reps: number;
+}): ZoneCaptain {
+  return {
+    zoneId: row.zone_id,
+    captainUserId: row.captain_user_id,
+    captainUsername: row.captain_username,
+    totalReps: Number(row.total_reps),
+  };
+}
+
+/** Fetch only durable claims intersecting one bounded map viewport. */
+export async function fetchZoneCaptainsInViewport(
+  viewport: ZoneViewport,
+  signal?: AbortSignal
+): Promise<ZoneCaptain[]> {
+  let request = supabase.rpc("get_zone_captains_in_viewport", {
+    p_min_lat_index: viewport.minLatIndex,
+    p_max_lat_index: viewport.maxLatIndex,
+    p_min_lng_index: viewport.minLngIndex,
+    p_max_lng_index: viewport.maxLngIndex,
+  });
+  if (signal) request = request.abortSignal(signal);
+
+  const { data, error } = await request;
+  if (error) {
+    if (!signal?.aborted) console.error("zoneService: failed to fetch viewport captains", error);
     return [];
   }
+  return (data || []).map(mapZoneCaptain);
+}
 
-  const scores = new Map<string, Map<string, { username: string; reps: number }>>();
-
-  for (const row of data) {
-    if (!row.zone_id) continue;
-    const profile = row.profiles as { username: string } | null;
-    const username = profile?.username || "Unknown";
-    const zoneScores = scores.get(row.zone_id) || new Map();
-    const existing = zoneScores.get(row.user_id) || { username, reps: 0 };
-    existing.reps += row.reps;
-    zoneScores.set(row.user_id, existing);
-    scores.set(row.zone_id, zoneScores);
+/** Fetch one durable claim for post-workout feedback; never aggregate global activity client-side. */
+export async function fetchZoneCaptain(zoneId: string): Promise<ZoneCaptain | null> {
+  const { data, error } = await supabase.rpc("get_zone_captain", { p_zone_id: zoneId });
+  if (error) {
+    console.error("zoneService: failed to fetch zone captain", error);
+    return null;
   }
-
-  const captains: ZoneCaptain[] = [];
-  for (const [zoneId, zoneScores] of scores) {
-    let topUserId = "";
-    let topUsername = "";
-    let topReps = 0;
-    for (const [userId, { username, reps }] of zoneScores) {
-      if (reps > topReps) {
-        topUserId = userId;
-        topUsername = username;
-        topReps = reps;
-      }
-    }
-    if (topUserId) {
-      captains.push({
-        zoneId,
-        captainUserId: topUserId,
-        captainUsername: topUsername,
-        totalReps: topReps,
-      });
-    }
-  }
-
-  return captains;
+  return data?.[0] ? mapZoneCaptain(data[0]) : null;
 }
 
 export async function fetchZoneStandings(zoneId: string): Promise<ZoneStandings[]> {
@@ -345,7 +344,7 @@ export async function fetchZoneStandings(zoneId: string): Promise<ZoneStandings[
 
   const standings = new Map<string, ZoneStandings>();
   for (const row of data) {
-    const profile = row.profiles as { username: string } | null;
+    const profile = row.profiles as unknown as { username: string } | null;
     const existing = standings.get(row.user_id) || {
       zoneId,
       userId: row.user_id,
@@ -365,13 +364,13 @@ export async function checkDiceHeist(
   addedReps: number,
   zoneInfo: ZoneInfo
 ): Promise<DiceHeistResult> {
-  const captains = await fetchZoneCaptains();
-  const currentCaptain = captains.find((c) => c.zoneId === zoneId);
+  const currentCaptain = await fetchZoneCaptain(zoneId);
   const previousCaptainId = currentCaptain?.captainUserId;
 
   const standings = await fetchZoneStandings(zoneId);
   const userStanding = standings.find((s) => s.userId === userId);
-  const newTotalReps = (userStanding?.totalReps || 0) + addedReps;
+  // Completion has already been inserted by the time this UI effect runs.
+  const newTotalReps = userStanding?.totalReps || addedReps;
 
   const previousUserReps = userStanding?.totalReps || 0;
   const topAmongOthers = standings

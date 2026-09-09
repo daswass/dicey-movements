@@ -15,6 +15,7 @@ import {
   getZoneBounds,
   getZoneColorForCaptain,
   getZoneFromCoordinates,
+  getZoneViewport,
   indicesToZoneId,
   latLngToIndices,
   resolveZoneDisplayName,
@@ -104,5 +105,21 @@ describe("captain relation colors", () => {
     expect(getZoneColorForCaptain("me", "me", friends)).toBe("#15803d");
     expect(getZoneColorForCaptain("friend-1", "me", friends)).toBe("#3B82F6");
     expect(getZoneColorForCaptain("stranger", "me", friends)).toBe("#EF4444");
+  });
+});
+
+
+describe("zone viewport bounds", () => {
+  it("converts a map viewport to bounded grid indices", () => {
+    expect(getZoneViewport(40.70, -74.03, 40.74, -73.98)).toEqual({
+      minLatIndex: Math.floor(40.70 / ZONE_GRID_SIZE) - 1,
+      maxLatIndex: Math.floor(40.74 / ZONE_GRID_SIZE) + 1,
+      minLngIndex: Math.floor(-74.03 / ZONE_GRID_SIZE) - 1,
+      maxLngIndex: Math.floor(-73.98 / ZONE_GRID_SIZE) + 1,
+    });
+  });
+
+  it("refuses all-world viewports before any RPC can be made", () => {
+    expect(getZoneViewport(-90, -180, 90, 180)).toBeNull();
   });
 });

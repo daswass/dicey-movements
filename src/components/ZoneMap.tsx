@@ -6,12 +6,13 @@ import { UserProfile } from "../types/social";
 import { ZoneCaptain, ZoneInfo, ZoneStandings } from "../types/zones";
 import {
   fetchFriendIds,
-  fetchZoneCaptains,
+  fetchZoneCaptainsInViewport,
   fetchZoneNames,
   fetchZoneStandings,
   getCaptainRelation,
   getZoneColorByRelation,
   getZoneFromCoordinates,
+  getZoneViewport,
   getZoneInfoFromId,
   getZoneRadiusMeters,
   nameUnnamedZone,
@@ -182,6 +183,8 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const [namingError, setNamingError] = useState<string | null>(null);
   const [isSavingName, setIsSavingName] = useState(false);
   const [focusZoneCenter, setFocusZoneCenter] = useState<[number, number] | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [viewportTooLarge, setViewportTooLarge] = useState(false);
 
   const userCoords = userProfile?.location?.coordinates;
   const hasLocation = userCoords && !(userCoords.latitude === 0 && userCoords.longitude === 0);
@@ -225,25 +228,61 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
       });
   }, [captains, mapBounds, zoneNames]);
 
-  const loadCaptains = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const [data, friends] = await Promise.all([
-        fetchZoneCaptains(),
-        userProfile?.id ? fetchFriendIds(userProfile.id) : Promise.resolve(new Set<string>()),
-      ]);
-      setCaptains(data);
-      setFriendIds(friends);
-      setZoneNames(await fetchZoneNames(data.map((captain) => captain.zoneId)));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  useEffect(() => {
+    if (!userProfile?.id) {
+      setFriendIds(new Set());
+      return;
     }
+    let cancelled = false;
+    void fetchFriendIds(userProfile.id).then((friends) => {
+      if (!cancelled) setFriendIds(friends);
+    });
+    return () => { cancelled = true; };
   }, [userProfile?.id]);
 
   useEffect(() => {
-    loadCaptains();
-  }, [loadCaptains]);
+    if (!mapBounds) return;
+    const viewport = getZoneViewport(
+      mapBounds.getSouth(),
+      mapBounds.getWest(),
+      mapBounds.getNorth(),
+      mapBounds.getEast()
+    );
+    if (!viewport) {
+      setViewportTooLarge(true);
+      setCaptains([]);
+      setZoneNames(new Map());
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    setViewportTooLarge(false);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        setRefreshing(true);
+        try {
+          const data = await fetchZoneCaptainsInViewport(viewport, controller.signal);
+          if (controller.signal.aborted) return;
+          const names = await fetchZoneNames(data.map((captain) => captain.zoneId));
+          if (controller.signal.aborted) return;
+          setCaptains(data);
+          setZoneNames(names);
+        } finally {
+          if (!controller.signal.aborted) {
+            setLoading(false);
+            setRefreshing(false);
+          }
+        }
+      })();
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [mapBounds, refreshNonce]);
 
   const handleBoundsChange = useCallback((bounds: L.LatLngBounds) => {
     setMapBounds(bounds);
@@ -338,7 +377,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
             )}
 
             <button
-              onClick={loadCaptains}
+              onClick={() => setRefreshNonce((value) => value + 1)}
               disabled={refreshing}
               className="absolute top-3 left-3 z-[1000] bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2 border border-gray-600 disabled:opacity-50">
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
@@ -392,7 +431,10 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 <span className="text-gray-200">{label}</span>
               </div>
             ))}
-            {uniqueCaptains.length === 0 && !loading && (
+            {viewportTooLarge && (
+              <span className="text-gray-500 text-sm">Zoom in to load claimed zones.</span>
+            )}
+            {uniqueCaptains.length === 0 && !loading && !viewportTooLarge && (
               <span className="text-gray-500 text-sm">No zones claimed yet — be the first!</span>
             )}
           </div>
@@ -403,7 +445,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
             <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
               <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                 <Crown size={18} className="text-yellow-500" />
-                Your Sheister Zones
+                Your Visible Sheister Zones
               </h2>
               {userSheisterZones.length === 0 && !loading && (
                 <p className="text-gray-500 text-sm">
