@@ -8,6 +8,7 @@ export const UNNAMED_ZONE_DISPLAY = "Unnamed Zone";
 export const ZONE_GRID_SIZE = 0.02;
 /** The server enforces the same bound so map panning cannot become an all-world query. */
 export const MAX_ZONE_VIEWPORT_CELLS = 10_000;
+export const ZONE_REFERENCE_ZOOM = 14;
 
 const CAPTAIN_COLORS = [
   "#3B82F6",
@@ -211,6 +212,15 @@ export function getZoneRadiusMeters(latitude: number): number {
   return Math.sqrt(halfLat * halfLat + halfLng * halfLng);
 }
 
+/**
+ * Maintain readable territory marks as the map zooms out without making nearby zones oversized.
+ * A square-root zoom curve grows circles gradually and caps the expansion at very low zooms.
+ */
+export function getZoneDisplayRadiusMeters(latitude: number, zoom: number): number {
+  const zoomOutScale = 2 ** Math.max(0, (ZONE_REFERENCE_ZOOM - zoom) / 2);
+  return getZoneRadiusMeters(latitude) * Math.min(64, zoomOutScale);
+}
+
 export function getCaptainColor(userId?: string): string {
   if (!userId) return UNCLAIMED_COLOR;
   let hash = 0;
@@ -328,6 +338,16 @@ export async function fetchZoneCaptain(zoneId: string): Promise<ZoneCaptain | nu
     return null;
   }
   return data?.[0] ? mapZoneCaptain(data[0]) : null;
+}
+
+/** Durable claims belonging to the signed-in user, independent of the current viewport. */
+export async function fetchOwnedZoneCaptains(): Promise<ZoneCaptain[]> {
+  const { data, error } = await supabase.rpc("get_my_zone_captains");
+  if (error) {
+    console.error("zoneService: failed to fetch owned zone captains", error);
+    return [];
+  }
+  return (data || []).map(mapZoneCaptain);
 }
 
 export async function fetchZoneStandings(zoneId: string): Promise<ZoneStandings[]> {

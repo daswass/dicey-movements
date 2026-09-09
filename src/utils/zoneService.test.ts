@@ -13,6 +13,8 @@ import {
   buildZoneFromLocation,
   getCaptainRelation,
   getZoneBounds,
+  getZoneDisplayRadiusMeters,
+  getZoneRadiusMeters,
   getZoneColorForCaptain,
   getZoneFromCoordinates,
   getZoneViewport,
@@ -121,5 +123,19 @@ describe("zone viewport bounds", () => {
 
   it("refuses all-world viewports before any RPC can be made", () => {
     expect(getZoneViewport(-90, -180, 90, 180)).toBeNull();
+  });
+});
+
+
+describe("zone zoom scaling", () => {
+  it("keeps territory markers at their normal radius when zoomed in", () => {
+    expect(getZoneDisplayRadiusMeters(40.7, 14)).toBe(getZoneRadiusMeters(40.7));
+  });
+
+  it("grows territory markers gradually as the map zooms out", () => {
+    const atReferenceZoom = getZoneDisplayRadiusMeters(40.7, 14);
+    const zoomedOut = getZoneDisplayRadiusMeters(40.7, 6);
+    expect(zoomedOut).toBeGreaterThan(atReferenceZoom);
+    expect(zoomedOut / atReferenceZoom).toBe(16);
   });
 });

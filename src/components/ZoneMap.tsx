@@ -6,15 +6,16 @@ import { UserProfile } from "../types/social";
 import { ZoneCaptain, ZoneInfo, ZoneStandings } from "../types/zones";
 import {
   fetchFriendIds,
+  fetchOwnedZoneCaptains,
   fetchZoneCaptainsInViewport,
   fetchZoneNames,
   fetchZoneStandings,
   getCaptainRelation,
   getZoneColorByRelation,
   getZoneFromCoordinates,
+  getZoneDisplayRadiusMeters,
   getZoneViewport,
   getZoneInfoFromId,
-  getZoneRadiusMeters,
   nameUnnamedZone,
   resolveZoneDisplayName,
   UNNAMED_ZONE_DISPLAY,
@@ -57,6 +58,7 @@ interface ClaimedZoneCircleProps {
   color: string;
   relation: ZoneCaptainRelation;
   isUserZone: boolean;
+  zoom: number;
   onSelect: (zone: ZoneInfo) => void;
 }
 
@@ -66,10 +68,11 @@ const ClaimedZoneCircle: React.FC<ClaimedZoneCircleProps> = ({
   color,
   relation,
   isUserZone,
+  zoom,
   onSelect,
 }) => {
   const center: [number, number] = [zone.center.latitude, zone.center.longitude];
-  const baseRadius = getZoneRadiusMeters(zone.center.latitude);
+  const baseRadius = getZoneDisplayRadiusMeters(zone.center.latitude, zoom);
   const rings = relation === "self" ? SELF_GRADIENT_RINGS : GRADIENT_RINGS;
 
   return (
@@ -127,21 +130,15 @@ const ClaimedZoneCircle: React.FC<ClaimedZoneCircleProps> = ({
 };
 
 function MapBoundsTracker({
-  onBoundsChange,
+  onViewChange,
 }: {
-  onBoundsChange: (bounds: L.LatLngBounds) => void;
+  onViewChange: (bounds: L.LatLngBounds, zoom: number) => void;
 }) {
   const map = useMap();
+  const reportView = useCallback(() => onViewChange(map.getBounds(), map.getZoom()), [map, onViewChange]);
 
-  useEffect(() => {
-    onBoundsChange(map.getBounds());
-  }, [map, onBoundsChange]);
-
-  useMapEvents({
-    moveend: () => onBoundsChange(map.getBounds()),
-    zoomend: () => onBoundsChange(map.getBounds()),
-  });
-
+  useEffect(() => { reportView(); }, [reportView]);
+  useMapEvents({ moveend: reportView, zoomend: reportView });
   return null;
 }
 
@@ -171,12 +168,15 @@ function FlyToZone({ center }: { center: [number, number] | null }) {
 
 const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   const [captains, setCaptains] = useState<ZoneCaptain[]>([]);
+  const [ownedCaptains, setOwnedCaptains] = useState<ZoneCaptain[]>([]);
   const [zoneNames, setZoneNames] = useState<Map<string, string>>(new Map());
   const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
   const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
+  const [mapZoom, setMapZoom] = useState(14);
   const [selectedZone, setSelectedZone] = useState<ZoneInfo | null>(null);
   const [standings, setStandings] = useState<ZoneStandings[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ownedLoading, setOwnedLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [zoneNameInput, setZoneNameInput] = useState("");
   const [namingZoneId, setNamingZoneId] = useState<string | null>(null);
@@ -202,14 +202,13 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
 
   const userSheisterZones = useMemo(() => {
     if (!userProfile?.id) return [];
-    return captains
-      .filter((captain) => captain.captainUserId === userProfile.id)
+    return ownedCaptains
       .map((captain) => ({
         captain,
         zone: withDisplayName(getZoneInfoFromId(captain.zoneId), zoneNames),
       }))
       .sort((a, b) => b.captain.totalReps - a.captain.totalReps);
-  }, [captains, userProfile?.id, zoneNames]);
+  }, [ownedCaptains, userProfile?.id, zoneNames]);
 
   const userSheisterZoneIds = useMemo(
     () => new Set(userSheisterZones.map(({ zone }) => zone.id)),
@@ -217,7 +216,13 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
   );
 
   const claimedZonesInView = useMemo(() => {
-    return captains
+    // Viewport data covers nearby claims; durable owned claims are merged so a Sheister's
+    // territory remains rendered and zoom-scaled even when broad map bounds are rejected.
+    const visibleById = new Map<string, ZoneCaptain>();
+    for (const captain of [...captains, ...ownedCaptains]) {
+      visibleById.set(captain.zoneId, captain);
+    }
+    return Array.from(visibleById.values())
       .map((captain) => ({
         captain,
         zone: withDisplayName(getZoneInfoFromId(captain.zoneId), zoneNames),
@@ -226,19 +231,28 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
         if (!mapBounds) return true;
         return mapBounds.contains([zone.center.latitude, zone.center.longitude]);
       });
-  }, [captains, mapBounds, zoneNames]);
+  }, [captains, ownedCaptains, mapBounds, zoneNames]);
 
   useEffect(() => {
     if (!userProfile?.id) {
       setFriendIds(new Set());
+      setOwnedCaptains([]);
+      setOwnedLoading(false);
       return;
     }
     let cancelled = false;
-    void fetchFriendIds(userProfile.id).then((friends) => {
-      if (!cancelled) setFriendIds(friends);
+    setOwnedLoading(true);
+    void Promise.all([fetchFriendIds(userProfile.id), fetchOwnedZoneCaptains()]).then(([friends, owned]) => {
+      if (cancelled) return;
+      setFriendIds(friends);
+      setOwnedCaptains(owned);
+      void fetchZoneNames(owned.map((captain) => captain.zoneId)).then((names) => {
+        if (!cancelled) setZoneNames((previous) => new Map([...previous, ...names]));
+      });
+      setOwnedLoading(false);
     });
     return () => { cancelled = true; };
-  }, [userProfile?.id]);
+  }, [userProfile?.id, refreshNonce]);
 
   useEffect(() => {
     if (!mapBounds) return;
@@ -251,7 +265,6 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     if (!viewport) {
       setViewportTooLarge(true);
       setCaptains([]);
-      setZoneNames(new Map());
       setLoading(false);
       setRefreshing(false);
       return;
@@ -268,7 +281,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
           const names = await fetchZoneNames(data.map((captain) => captain.zoneId));
           if (controller.signal.aborted) return;
           setCaptains(data);
-          setZoneNames(names);
+          setZoneNames((previous) => new Map([...previous, ...names]));
         } finally {
           if (!controller.signal.aborted) {
             setLoading(false);
@@ -284,8 +297,9 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
     };
   }, [mapBounds, refreshNonce]);
 
-  const handleBoundsChange = useCallback((bounds: L.LatLngBounds) => {
+  const handleViewChange = useCallback((bounds: L.LatLngBounds, zoom: number) => {
     setMapBounds(bounds);
+    setMapZoom(zoom);
   }, []);
 
   const handleZoneClick = useCallback(
@@ -300,11 +314,11 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
 
   const captainMap = useMemo(() => {
     const map = new Map<string, ZoneCaptain>();
-    for (const captain of captains) {
+    for (const captain of [...captains, ...ownedCaptains]) {
       map.set(captain.zoneId, captain);
     }
     return map;
-  }, [captains]);
+  }, [captains, ownedCaptains]);
 
   const handleSelectZone = useCallback(
     async (zone: ZoneInfo) => {
@@ -393,7 +407,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <MapBoundsTracker onBoundsChange={handleBoundsChange} />
+              <MapBoundsTracker onViewChange={handleViewChange} />
               <FlyToZone center={focusZoneCenter} />
               {hasLocation && <RecenterButton center={mapCenter} />}
 
@@ -412,6 +426,7 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
                     color={getZoneColorByRelation(relation)}
                     relation={relation}
                     isUserZone={userSheisterZoneIds.has(zone.id)}
+                    zoom={mapZoom}
                     onSelect={handleZoneClick}
                   />
                 );
@@ -445,9 +460,9 @@ const ZoneMap: React.FC<ZoneMapProps> = ({ userProfile }) => {
             <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
               <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                 <Crown size={18} className="text-yellow-500" />
-                Your Visible Sheister Zones
+                Your Sheister Zones
               </h2>
-              {userSheisterZones.length === 0 && !loading && (
+              {userSheisterZones.length === 0 && !ownedLoading && (
                 <p className="text-gray-500 text-sm">
                   No zones under your control yet — complete a workout to claim one.
                 </p>
