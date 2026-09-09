@@ -1,7 +1,7 @@
 import { OuraService } from "./ouraService";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
-import { classifyOuraError, logOuraError } from "./ouraError";
+import { classifyOuraError, logOuraError, requiresOuraReconnect } from "./ouraError";
 
 dotenv.config();
 
@@ -70,6 +70,19 @@ async function syncTodaysSteps() {
       // Do not serialize Axios/Oura errors here: they can include OAuth tokens and
       // client credentials. The user ID and classification remain actionable.
       logOuraError(`Scheduled Oura sync failed for user ${user.user_id}`, error);
+
+      if (requiresOuraReconnect(error)) {
+        try {
+          await OuraService.disconnectUser(user.user_id);
+          console.log(
+            `Disconnected Oura connection for user ${user.user_id} [reauthentication_required]`
+          );
+          continue;
+        } catch (disconnectError) {
+          logOuraError(`Failed to disconnect Oura for user ${user.user_id}`, disconnectError);
+        }
+      }
+
       errorCount++;
     }
   }

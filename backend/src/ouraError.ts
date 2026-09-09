@@ -42,6 +42,14 @@ export function toSafeOuraError(error: unknown): Error {
   return new Error(`Oura request failed (${classifyOuraError(error)})`);
 }
 
+/**
+ * A scheduled sync has no user interaction to repair an OAuth grant. Oura
+ * returns 400 for an invalid refresh grant and 401/403 for revoked access.
+ */
+export function requiresOuraReconnect(error: unknown): boolean {
+  return axios.isAxiosError(error) && [400, 401, 403].includes(error.response?.status ?? 0);
+}
+
 export function logOuraError(context: string, error: unknown): void {
   console.error(`${context} [${classifyOuraError(error)}]`);
 }

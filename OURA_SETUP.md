@@ -126,11 +126,11 @@ And update the environment variables accordingly.
 
 ### Recovering a failed scheduled sync
 
-If the scheduled Oura sync reports an `authorization_failed` (or another sync failure) for a
-user, their existing OAuth grant may no longer be usable. The affected user must disconnect and
-reconnect Oura from Dicey Settings to restore actual syncing. The scheduled job deliberately
-reports only the internal user ID and a safe error classification; it never logs OAuth tokens or
-Oura client credentials.
+If Oura rejects a user's authorization during a scheduled sync, Dicey automatically removes that
+stale Oura connection and lets the rest of the sync complete successfully. The user must reconnect
+Oura from Dicey Settings to restore syncing the next time they use the app. The scheduled job
+deliberately reports only the internal user ID and a safe error classification; it never logs OAuth
+tokens or Oura client credentials.
 
 ## Security Notes
 

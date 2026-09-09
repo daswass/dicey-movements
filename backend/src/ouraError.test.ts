@@ -1,5 +1,10 @@
 import { AxiosError, AxiosHeaders } from "axios";
-import { classifyOuraError, logOuraError, toSafeOuraError } from "./ouraError";
+import {
+  classifyOuraError,
+  logOuraError,
+  requiresOuraReconnect,
+  toSafeOuraError,
+} from "./ouraError";
 
 const secrets = {
   refreshToken: "refresh-token-should-never-appear",
@@ -52,5 +57,15 @@ describe("Oura error sanitization", () => {
     expect(output).not.toContain(secrets.refreshToken);
     expect(output).not.toContain(secrets.clientId);
     expect(output).not.toContain(secrets.clientSecret);
+  });
+
+  it.each([
+    [400, true],
+    [401, true],
+    [403, true],
+    [429, false],
+    [503, false],
+  ])("marks Oura HTTP %i for reconnect: %s", (status, expected) => {
+    expect(requiresOuraReconnect(oauthAxiosError(status))).toBe(expected);
   });
 });
