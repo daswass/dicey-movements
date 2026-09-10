@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearPendingWorkout, restorePendingWorkout, savePendingWorkout } from "./workoutRecovery";
+import { clearPendingWorkout, MAX_SAFE_WORKOUT_MULTIPLIER, restorePendingWorkout, savePendingWorkout } from "./workoutRecovery";
 
 const workout = {
   id: "stable-workout-id",
@@ -28,6 +28,12 @@ describe("pending workout recovery", () => {
 
   it("discards malformed stored data instead of presenting an invalid workout", () => {
     localStorage.setItem("dicey.pending-workout.user-a", "not-json");
+    expect(restorePendingWorkout("user-a")).toBeNull();
+    expect(localStorage.getItem("dicey.pending-workout.user-a")).toBeNull();
+  });
+
+  it("automatically discards a stale archive-sized multiplier", () => {
+    savePendingWorkout("user-a", { ...workout, multiplier: MAX_SAFE_WORKOUT_MULTIPLIER + 1 });
     expect(restorePendingWorkout("user-a")).toBeNull();
     expect(localStorage.getItem("dicey.pending-workout.user-a")).toBeNull();
   });
