@@ -2,6 +2,9 @@ import type { WorkoutSession } from "../types";
 
 const storageKey = (userId: string) => `dicey.pending-workout.${userId}`;
 
+/** A larger value signals stale/corrupt multiplier state, never a valid playable roll. */
+export const MAX_SAFE_WORKOUT_MULTIPLIER = 100;
+
 function isWorkoutSession(value: unknown): value is WorkoutSession {
   if (!value || typeof value !== "object") return false;
   const session = value as Partial<WorkoutSession>;
@@ -10,6 +13,8 @@ function isWorkoutSession(value: unknown): value is WorkoutSession {
     typeof session.timestamp === "number" &&
     typeof session.reps === "number" &&
     typeof session.multiplier === "number" &&
+    session.multiplier >= 1 &&
+    session.multiplier <= MAX_SAFE_WORKOUT_MULTIPLIER &&
     !!session.exercise &&
     typeof session.exercise.id === "number" &&
     !!session.diceRoll &&

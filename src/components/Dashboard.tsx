@@ -8,7 +8,7 @@ import { useWorkoutComplete } from "../hooks/useWorkoutComplete";
 import { useWorkoutHistory } from "../hooks/useWorkoutHistory";
 import { notificationService } from "../utils/notificationService";
 import { supabase } from "../utils/supabaseClient";
-import { clearPendingWorkout, restorePendingWorkout, savePendingWorkout } from "../utils/workoutRecovery";
+import { clearPendingWorkout, MAX_SAFE_WORKOUT_MULTIPLIER, restorePendingWorkout, savePendingWorkout } from "../utils/workoutRecovery";
 import DashboardModals from "./DashboardModals";
 import DashboardStatsPanel from "./DashboardStatsPanel";
 import History from "./History";
@@ -81,6 +81,24 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
     useEffect(() => {
       setLatestSession(userId ? restorePendingWorkout(userId) : null);
     }, [userId]);
+
+    // A stale client can retain a pre-fix roll across deployments. Never strand mobile users on
+    // an impossible completion: discard it locally and return them to a fresh dice roll.
+    useEffect(() => {
+      if (!latestSession || latestSession.multiplier <= MAX_SAFE_WORKOUT_MULTIPLIER) return;
+      console.warn("Dashboard: Discarding invalid pending workout multiplier", latestSession.multiplier);
+      if (userId) clearPendingWorkout(userId);
+      setLatestSession(null);
+      setCurrentWorkoutComplete(false);
+      setTimerComplete(true);
+      setIsRollAndStartMode(false);
+      setCompletionError(null);
+    }, [
+      latestSession,
+      userId,
+      setCurrentWorkoutComplete,
+      setTimerComplete,
+    ]);
     const [showSettings, setShowSettings] = useState(false);
     const [workoutCompleteModal, setWorkoutCompleteModal] = useState<WorkoutCompleteModalState | null>(
       null
