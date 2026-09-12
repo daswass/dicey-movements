@@ -59,10 +59,10 @@ export function useWorkoutComplete({
     setIsCompletingWorkout(true);
     setCompletionError(null);
 
+    let completion;
+    let zoneId: string | null = null;
+    let zoneInfo: ReturnType<typeof buildZoneFromLocation>["zoneInfo"] = null;
     try {
-      let zoneId: string | null = null;
-      let zoneInfo: ReturnType<typeof buildZoneFromLocation>["zoneInfo"] = null;
-
       try {
         const freshLocation = await getUserLocation({ fresh: true });
         ({ zoneId, zoneInfo } = buildZoneFromLocation(freshLocation));
@@ -81,7 +81,7 @@ export function useWorkoutComplete({
         console.warn("useWorkoutComplete: Unable to refresh location:", error);
       }
 
-      const completion = await api.completeWorkout({
+      completion = await api.completeWorkout({
         activityId: session.id,
         timestamp: new Date(session.timestamp).toISOString(),
         exerciseId: session.exercise.id,
@@ -92,16 +92,47 @@ export function useWorkoutComplete({
         zoneId,
       });
 
-      // The server has committed the activity. Only now clear the device's timer notification and
-      // run UI-only post-completion work. A duplicate response is still safe to finish locally.
-      notificationService.clearAllNotifications().catch((error) => {
-        console.error("useWorkoutComplete: Error clearing notifications:", error);
-      });
-      notificationService.sendClearNotificationMessage("timer-notification").catch((error) => {
-        console.error("useWorkoutComplete: Error clearing timer notification:", error);
-      });
+      // Only a request failure means the workout was not synced. Everything below is UI-only
+      // post-commit work and must not make a durable completion look like it failed.
+    } catch (error) {
+      console.error("useWorkoutComplete: Error syncing workout completion:", error);
+      setCompletionError("Workout was not synced. Retry to safely send the same workout.");
+      setIsCompletingWorkout(false);
+      return;
+    }
 
-      let heistResult = null;
+    // The server has committed the activity. Only now clear the device's timer notification and
+    // run UI-only post-completion work. A duplicate response is still safe to finish locally.
+    notificationService.clearAllNotifications().catch((error) => {
+      console.error("useWorkoutComplete: Error clearing notifications:", error);
+    });
+    notificationService.sendClearNotificationMessage("timer-notification").catch((error) => {
+      console.error("useWorkoutComplete: Error clearing timer notification:", error);
+    });
+
+    let restartTimerId: ReturnType<typeof setTimeout> | undefined;
+    const restartWorkout = () => {
+      if (restartTimerId) clearTimeout(restartTimerId);
+      setWorkoutCompleteModal(null);
+      setCurrentWorkoutComplete(false);
+      setTimerComplete(false);
+      sessionStorage.removeItem("openedFromNotification");
+      resetNotificationFlags();
+      onStartTimer();
+      clearPendingWorkout(userId);
+      setLatestSession(null);
+      setIsRollAndStartMode(false);
+      setIsCompletingWorkout(false);
+    };
+    const scheduleRestart = (delayMs: number) => {
+      if (restartTimerId) clearTimeout(restartTimerId);
+      restartTimerId = setTimeout(restartWorkout, delayMs);
+    };
+
+    let heistResult = null;
+    try {
+      // Derived territory effects and refreshed UI data are non-critical after the server has
+      // accepted the workout. They may be retried on the next load without replaying activity.
       if (completion.created && zoneId && zoneInfo) {
         heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
       }
@@ -115,52 +146,31 @@ export function useWorkoutComplete({
       if (updatedProfile && !profileError) {
         setUserProfile({ ...updatedProfile, timer_duration: updatedProfile.timer_duration || 300 });
       }
-
-      let restartTimerId: ReturnType<typeof setTimeout> | undefined;
-      const restartWorkout = () => {
-        if (restartTimerId) clearTimeout(restartTimerId);
-        setWorkoutCompleteModal(null);
-        setCurrentWorkoutComplete(false);
-        setTimerComplete(false);
-        sessionStorage.removeItem("openedFromNotification");
-        resetNotificationFlags();
-        onStartTimer();
-        clearPendingWorkout(userId);
-        setLatestSession(null);
-        setIsRollAndStartMode(false);
-        setIsCompletingWorkout(false);
-      };
-      const scheduleRestart = (delayMs: number) => {
-        if (restartTimerId) clearTimeout(restartTimerId);
-        restartTimerId = setTimeout(restartWorkout, delayMs);
-      };
-
-      if (heistResult) {
-        const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
-        if (heistResult.isHeist || canNameZone) {
-          setWorkoutCompleteModal({
-            heist: {
-              zoneId: heistResult.zoneInfo.id,
-              zoneName: heistResult.zoneInfo.displayName,
-              previousCaptain: heistResult.previousCaptain,
-              totalReps: heistResult.newTotalReps,
-              isHeist: heistResult.isHeist,
-              canNameZone,
-            },
-            onDismiss: restartWorkout,
-          });
-          if (!canNameZone) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
-          return;
-        }
-      }
-
-      setWorkoutCompleteModal({});
-      scheduleRestart(2000);
     } catch (error) {
-      console.error("useWorkoutComplete: Error syncing workout completion:", error);
-      setCompletionError("Workout was not synced. Retry to safely send the same workout.");
-      setIsCompletingWorkout(false);
+      console.error("useWorkoutComplete: Post-completion refresh failed:", error);
     }
+
+    if (heistResult) {
+      const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
+      if (heistResult.isHeist || canNameZone) {
+        setWorkoutCompleteModal({
+          heist: {
+            zoneId: heistResult.zoneInfo.id,
+            zoneName: heistResult.zoneInfo.displayName,
+            previousCaptain: heistResult.previousCaptain,
+            totalReps: heistResult.newTotalReps,
+            isHeist: heistResult.isHeist,
+            canNameZone,
+          },
+          onDismiss: restartWorkout,
+        });
+        if (!canNameZone) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
+        return;
+      }
+    }
+
+    setWorkoutCompleteModal({});
+    scheduleRestart(2000);
   }, [
     isCompletingWorkout,
     latestSession,
