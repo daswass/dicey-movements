@@ -51,7 +51,14 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+      let detail = response.statusText;
+      try {
+        const body = await response.json();
+        if (typeof body?.error === "string" && body.error.trim()) detail = body.error;
+      } catch {
+        // Some proxy and platform errors have no JSON body.
+      }
+      throw new Error(`API ${response.status}: ${detail}`);
     }
 
     return response.json();

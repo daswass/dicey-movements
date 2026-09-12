@@ -96,7 +96,12 @@ export function useWorkoutComplete({
       // post-commit work and must not make a durable completion look like it failed.
     } catch (error) {
       console.error("useWorkoutComplete: Error syncing workout completion:", error);
-      setCompletionError("Workout was not synced. Retry to safely send the same workout.");
+      const message = error instanceof Error ? error.message : "";
+      setCompletionError(
+        message.startsWith("API 401:")
+          ? "Your session expired. Reload Dicey, sign in if prompted, then retry this same workout."
+          : "Workout was not synced. Retry to safely send the same workout."
+      );
       setIsCompletingWorkout(false);
       return;
     }

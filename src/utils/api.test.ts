@@ -36,4 +36,15 @@ describe("api.completeWorkout", () => {
       })
     );
   });
+
+  it("preserves the backend error detail for completion failures", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: () => Promise.resolve({ error: "Invalid or expired token" }),
+    } as Response);
+
+    await expect(api.completeWorkout(completion)).rejects.toThrow("API 401: Invalid or expired token");
+  });
 });
