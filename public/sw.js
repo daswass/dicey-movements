@@ -6,24 +6,26 @@ const CACHE_VERSION = Date.now().toString();
 const CACHE_NAME = `dicey-movements-v${CACHE_VERSION}`;
 const STATIC_CACHE_NAME = `dicey-movements-static-v${CACHE_VERSION}`;
 
-// Add cache busting query parameter to force fresh content
-const CACHE_BUST = `?v=${CACHE_VERSION}`;
-
-// Files to cache for offline functionality (excluding index.html to ensure updates)
+// Files to cache for offline functionality (excluding index.html to ensure updates).
+// Every entry is independently optional: a missing decorative asset must not prevent the worker
+// from installing and delivering push notifications or update prompts.
 const STATIC_FILES = ["/favicon.svg", "/manifest.json"];
 
-// Install event - cache static assets
+// Install event - cache static assets without making installation all-or-nothing.
 self.addEventListener("install", (event) => {
   console.log("Service Worker: Installing new version", CACHE_VERSION);
 
   event.waitUntil(
-    Promise.all([
-      // Cache static files (excluding index.html)
-      caches.open(STATIC_CACHE_NAME).then((cache) => {
-        console.log("Service Worker: Caching static files");
-        return cache.addAll(STATIC_FILES);
-      }),
-    ])
+    caches.open(STATIC_CACHE_NAME).then(async (cache) => {
+      const results = await Promise.allSettled(
+        STATIC_FILES.map((asset) => cache.add(asset))
+      );
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.warn("Service Worker: Could not cache optional asset", STATIC_FILES[index], result.reason);
+        }
+      });
+    })
   );
 });
 

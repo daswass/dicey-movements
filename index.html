@@ -35,21 +35,5 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- iOS PWA cache busting script -->
-    <script>
-      // Force refresh on iOS PWA if needed
-      if (window.navigator.standalone) {
-        // This is running as a PWA
-        const lastUpdate = localStorage.getItem("lastUpdate");
-        const currentTime = Date.now();
-
-        // Check if we need to force refresh (every 24 hours)
-        if (!lastUpdate || currentTime - parseInt(lastUpdate) > 24 * 60 * 60 * 1000) {
-          localStorage.setItem("lastUpdate", currentTime.toString());
-          // Force reload to ensure fresh content
-          window.location.reload();
-        }
-      }
-    </script>
   </body>
 </html>
