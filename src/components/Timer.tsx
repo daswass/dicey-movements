@@ -136,6 +136,12 @@ const Timer: React.FC<TimerProps> = ({
     console.log("Timer component - Pause button clicked.");
     pauseTimer();
 
+    // A running timer remains authoritative in profiles until its master is cleared. Without this,
+    // the next realtime/poll refresh immediately starts the local worker again after a pause.
+    void timerSyncService.stopTimerSync().catch((error) => {
+      console.error("Timer: Error pausing timer sync:", error);
+    });
+
     // Clear timer notifications when pausing
     clearNotificationsSafely();
   }, [pauseTimer, clearNotificationsSafely]);
