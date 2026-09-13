@@ -73,12 +73,34 @@ app.use(limiter);
 
 // Routes
 app.get("/api/health", async (_req, res) => {
-  const { error } = await supabase.from("activities").select("id", { head: true, count: "exact" }).limit(1);
-  if (error) {
-    console.error("Backend database health check failed:", error.message);
+  const { error: databaseError } = await supabase
+    .from("activities")
+    .select("id", { head: true, count: "exact" })
+    .limit(1);
+  if (databaseError) {
+    console.error("Backend database health check failed:", databaseError.message);
     return res.status(503).json({ status: "degraded", database: "unavailable" });
   }
-  return res.json({ status: "ok", message: "Backend server is running!", database: "ok" });
+
+  // A guaranteed-nonexistent user means this call cannot create an activity: a working RPC fails
+  // at the foreign-key check, while a missing/stale PostgREST function reports PGRST202 instead.
+  const { error: rpcError } = await supabase.rpc("record_workout_completion", {
+    p_activity_id: "00000000-0000-4000-8000-000000000000",
+    p_user_id: "00000000-0000-4000-8000-000000000000",
+    p_timestamp: "2026-01-01T00:00:00.000Z",
+    p_exercise_id: 1,
+    p_exercise_name: "Health check",
+    p_reps: 1,
+    p_multiplier: 1,
+    p_dice_roll: { exerciseDie: 1, repsDie: 1 },
+    p_zone_id: null,
+  });
+  if (rpcError?.code === "PGRST202") {
+    console.error("Workout completion RPC is unavailable:", rpcError.message);
+    return res.status(503).json({ status: "degraded", database: "ok", completion_rpc: "unavailable" });
+  }
+
+  return res.json({ status: "ok", message: "Backend server is running!", database: "ok", completion_rpc: "ok" });
 });
 
 // Oura Integration Routes
