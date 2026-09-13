@@ -248,14 +248,12 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   };
 
   // Accept incoming friend request
-  const acceptFriendRequest = async (requestId: string, requesterUserId: string) => {
+  const acceptFriendRequest = async (requestId: string) => {
     try {
       if (!userId) return;
 
       const { error: rpcError } = await supabase.rpc("accept_friend_request_transaction", {
-        friendship_record_id: requestId,
-        current_user_id: userId,
-        requester_id: requesterUserId,
+        p_friendship_record_id: requestId,
       });
 
       if (rpcError) throw rpcError;
@@ -413,7 +411,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
                   {user.relationshipStatus === "pending_incoming" ? (
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => acceptFriendRequest(user.friendshipRecordId!, user.id)}
+                        onClick={() => acceptFriendRequest(user.friendshipRecordId!)}
                         className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
                         Accept
                       </button>
@@ -488,7 +486,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
                     </div>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => acceptFriendRequest(friend.id, friend.user_id)}
+                        onClick={() => acceptFriendRequest(friend.id)}
                         className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
                         Accept
                       </button>
