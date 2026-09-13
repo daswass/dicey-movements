@@ -248,15 +248,27 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
   };
 
   // Accept incoming friend request
-  const acceptFriendRequest = async (requestId: string) => {
+  const acceptFriendRequest = async (requestId: string, requesterUserId: string) => {
     try {
       if (!userId) return;
 
-      const { error: rpcError } = await supabase.rpc("accept_friend_request_transaction", {
+      // Production may temporarily run the legacy RPC while the security migration is awaiting
+      // deployment. Prefer the secure auth-derived signature, then fall back only when that
+      // signature is absent—not for real request-validation failures.
+      const { error: secureRpcError } = await supabase.rpc("accept_friend_request_transaction", {
         p_friendship_record_id: requestId,
       });
 
-      if (rpcError) throw rpcError;
+      if (secureRpcError?.code === "PGRST202") {
+        const { error: legacyRpcError } = await supabase.rpc("accept_friend_request_transaction", {
+          friendship_record_id: requestId,
+          current_user_id: userId,
+          requester_id: requesterUserId,
+        });
+        if (legacyRpcError) throw legacyRpcError;
+      } else if (secureRpcError) {
+        throw secureRpcError;
+      }
 
       await fetchFriends(); // Re-fetch all friend lists
       setSearchTerm(""); // Clear search term after accepting
@@ -411,7 +423,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
                   {user.relationshipStatus === "pending_incoming" ? (
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => acceptFriendRequest(user.friendshipRecordId!)}
+                        onClick={() => acceptFriendRequest(user.friendshipRecordId!, user.id)}
                         className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
                         Accept
                       </button>
@@ -486,7 +498,7 @@ export const Friends: React.FC<{ onFriendRequestUpdate?: () => void }> = ({
                     </div>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => acceptFriendRequest(friend.id)}
+                        onClick={() => acceptFriendRequest(friend.id, friend.user_id)}
                         className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
                         Accept
                       </button>
