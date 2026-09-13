@@ -105,7 +105,9 @@ class ActivitySyncService {
 
   // Stop real-time subscription
   private stopRealtimeSubscription(): void {
-    this.channelManager.disconnect();
+    // Listener-free is a temporary idle state, not an operator-requested shutdown. A permanent
+    // disconnect prevents a later Leaderboard mount from ever reopening its realtime channel.
+    this.channelManager.temporarilyDisconnect();
     this.isSubscribed = false;
   }
 

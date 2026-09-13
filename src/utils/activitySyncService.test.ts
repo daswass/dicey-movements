@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { subscribe } = vi.hoisted(() => ({
+const { subscribe, temporarilyDisconnect } = vi.hoisted(() => ({
   subscribe: vi.fn(),
+  temporarilyDisconnect: vi.fn(),
 }));
 
 vi.mock("./supabaseChannel", () => ({
@@ -10,6 +11,7 @@ vi.mock("./supabaseChannel", () => ({
   createSupabaseChannel: () => ({
     subscribe,
     disconnect: vi.fn(),
+    temporarilyDisconnect,
     cleanup: vi.fn(),
     getStatus: () => ({ isConnected: false, reconnectAttempts: 0 }),
   }),
@@ -22,6 +24,7 @@ vi.mock("./supabaseClient", () => ({
 describe("activitySyncService", () => {
   beforeEach(() => {
     subscribe.mockClear();
+    temporarilyDisconnect.mockClear();
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
   });
 
@@ -44,5 +47,6 @@ describe("activitySyncService", () => {
 
     unsubscribeActivity();
     unsubscribeOura();
+    expect(temporarilyDisconnect).toHaveBeenCalledOnce();
   });
 });
