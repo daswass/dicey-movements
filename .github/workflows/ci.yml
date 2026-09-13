@@ -1,0 +1,45 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, test, and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix backend ci
+
+      - name: Typecheck frontend
+        run: npx tsc -b --pretty false
+
+      - name: Typecheck backend
+        run: npx tsc --noEmit -p backend/tsconfig.json
+
+      - name: Run test suites
+        run: npm run test:all
+
+      - name: Build frontend
+        run: npm run build

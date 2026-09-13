@@ -10,7 +10,6 @@ import { useTimerNotifications } from "./hooks/useTimerNotifications";
 import { useTimerSync } from "./hooks/useTimerSync";
 import { useTimerWorker } from "./contexts/TimerWorkerContext";
 import { AppSettings } from "./types";
-import { activitySyncService } from "./utils/activitySyncService";
 import { notificationService } from "./utils/notificationService";
 import {
   fetchPendingFriendRequests,
@@ -271,6 +270,7 @@ function App() {
         const defaultAppSettings: AppSettings = {
           notificationsEnabled: userProfile.notifications_enabled ?? true,
           darkMode: true, // Always dark mode
+          userSplitId: userProfile.user_split_id ?? "",
         };
 
         if (prevSettings === null) {

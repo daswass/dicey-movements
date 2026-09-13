@@ -138,22 +138,6 @@ class NotificationService {
     }
   }
 
-  // Handle service worker changes (like home screen re-add)
-  private async handleServiceWorkerChange(): Promise<void> {
-    console.log("NotificationService: Handling service worker change...");
-
-    try {
-      const registration = await navigator.serviceWorker.getRegistration();
-
-      if (registration) {
-        this.registration = registration;
-        await this.forceRefreshSubscription();
-      }
-    } catch (error) {
-      console.error("NotificationService: Error handling service worker change:", error);
-    }
-  }
-
   private async forceRefreshSubscription(): Promise<void> {
     console.log("NotificationService: Force refreshing subscription...");
     try {
@@ -293,7 +277,7 @@ class NotificationService {
 
   async sendLocalNotification(
     title: string,
-    body: string,
+    _body: string,
     options: NotificationOptions = {}
   ): Promise<void> {
     if (!this.isSupported) {

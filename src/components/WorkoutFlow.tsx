@@ -25,7 +25,7 @@ interface WorkoutFlowProps {
   onRollAndStart: () => void;
   onDiceRoll: (session: WorkoutSession) => void;
   onSplitChange: (splitId: string) => void;
-  onWorkoutComplete: () => void;
+  onWorkoutComplete: () => Promise<void>;
 }
 
 export default function WorkoutFlow({
