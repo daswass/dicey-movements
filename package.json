@@ -9,8 +9,9 @@
     "update-sw": "node scripts/update-service-worker.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:all": "npm test && npm --prefix backend test",
+    "test:all": "npm run test:pwa-assets && npm test && npm --prefix backend test",
     "test-update": "node scripts/test-update.js",
+    "test:pwa-assets": "node scripts/test-pwa-assets.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
