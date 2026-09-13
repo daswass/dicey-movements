@@ -197,6 +197,10 @@ export class OuraService {
 
   // Sync Oura activity data for a user
   static async syncUserActivity(userId: string, days: number = 7): Promise<void> {
+    if (!Number.isInteger(days) || days < 1 || days > 31) {
+      throw new Error("days must be an integer between 1 and 31");
+    }
+
     try {
       const accessToken = await this.getValidAccessToken(userId);
 
@@ -208,7 +212,7 @@ export class OuraService {
       const activityData = await this.getDailyActivity(accessToken, startDateStr, endDate);
 
       // Save activity data to database
-      for (const activity of activityData.data) {
+      for (const activity of activityData.data.slice(0, days + 1)) {
         const { error } = await supabase.from("oura_activities").upsert(
           {
             user_id: userId,

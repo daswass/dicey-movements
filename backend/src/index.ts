@@ -1,6 +1,6 @@
 import cors from "cors";
 import dotenv from "dotenv";
-import express, { Request } from "express";
+import express, { ErrorRequestHandler, Request } from "express";
 import rateLimit from "express-rate-limit";
 import {
   requireAuth,
@@ -24,6 +24,7 @@ import {
   validateWorkoutCompletion,
 } from "./workoutCompletionService";
 import { isValidOuraWebhookToken } from "./webhookAuth";
+import { requireBoundedInteger } from "./requestValidation";
 
 // Load environment variables
 dotenv.config();
@@ -54,6 +55,7 @@ app.use(
 );
 app.use(
   express.json({
+    limit: "32kb",
     verify: (req, _res, buffer) => {
       if (req.url?.split("?")[0] === "/api/oura/webhook") {
         (req as Request).rawBody = Buffer.from(buffer);
@@ -171,7 +173,7 @@ app.get("/api/oura/status/:userId", requireAuth, requireSelfParam("userId"), asy
 app.post("/api/oura/sync/:userId", requireAuth, requireSelfParam("userId"), async (req, res) => {
   try {
     const { userId } = req.params;
-    const { days = 7 } = req.body;
+    const days = req.body?.days === undefined ? 7 : requireBoundedInteger(req.body.days, "days", 1, 31);
 
     await OuraService.syncUserActivity(userId, days);
 
@@ -541,6 +543,17 @@ app.put(
   }
   }
 );
+
+const jsonErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Request body too large" });
+  }
+  return next(error);
+};
+app.use(jsonErrorHandler);
 
 // Start server
 const PORT = process.env.PORT || 3001;
