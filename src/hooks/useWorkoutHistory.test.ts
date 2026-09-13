@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../utils/activitySyncService", () => ({
   activitySyncService: { subscribe: vi.fn(() => () => undefined) },
 }));
-import { countExercisesSinceSession, type WorkoutActivity } from "./useWorkoutHistory";
+vi.mock("../utils/supabaseClient", () => ({
+  supabase: {},
+}));
+import { calculateTodayStats, countExercisesSinceSession, type WorkoutActivity } from "./useWorkoutHistory";
 
 const activity = (id: string, exerciseId: number, timestamp: string): WorkoutActivity => ({
   id, user_id: "user", timestamp, exercise_id: exerciseId, exercise_name: "Pushup",
@@ -27,5 +30,20 @@ describe("countExercisesSinceSession", () => {
       activity("new-2", 2, "2026-09-09T04:02:00.000Z"),
     ];
     expect(countExercisesSinceSession(activities, start)).toEqual({ 1: 1, 2: 1 });
+  });
+});
+
+describe("calculateTodayStats", () => {
+  it("counts saved calendar-day activities even when no session boundary exists", () => {
+    const now = new Date(2026, 8, 13, 10, 0, 0);
+    const today = new Date(2026, 8, 13, 0, 1, 0).toISOString();
+    const yesterday = new Date(2026, 8, 12, 23, 59, 0).toISOString();
+    const activities = [activity("today", 2, today), activity("yesterday", 2, yesterday)];
+
+    expect(calculateTodayStats(activities, now)).toEqual({
+      totalSetsToday: 1,
+      totalRepsToday: 6,
+      repsPerExerciseToday: { 2: 6 },
+    });
   });
 });

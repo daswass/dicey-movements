@@ -36,6 +36,23 @@ export function countExercisesSinceSession(
   return counts;
 }
 
+export function calculateTodayStats(activities: WorkoutActivity[], now: Date = new Date()) {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayActivities = activities.filter((activity) => new Date(activity.timestamp) >= startOfToday);
+  const repsPerExerciseToday: Record<number, number> = {};
+
+  todayActivities.forEach((activity) => {
+    repsPerExerciseToday[activity.exercise_id] =
+      (repsPerExerciseToday[activity.exercise_id] || 0) + activity.reps;
+  });
+
+  return {
+    totalSetsToday: todayActivities.length,
+    totalRepsToday: todayActivities.reduce((total, activity) => total + activity.reps, 0),
+    repsPerExerciseToday,
+  };
+}
+
 export function useWorkoutHistory(userId: string | undefined, isMaster: boolean) {
   const [history, setHistory] = useState<WorkoutActivity[]>([]);
   const [exerciseCounts, setExerciseCounts] = useState<Record<number, number>>({});
@@ -99,27 +116,9 @@ export function useWorkoutHistory(userId: string | undefined, isMaster: boolean)
     [lastSessionStart, history]
   );
 
-  const stats = useMemo(() => {
-    if (!lastSessionStart) {
-      return { totalSetsToday: 0, totalRepsToday: 0, repsPerExerciseToday: {} as Record<number, number> };
-    }
-
-    const todayActivities = history.filter(
-      (activity) => new Date(activity.timestamp) > lastSessionStart
-    );
-    const repsPerExerciseToday: Record<number, number> = {};
-
-    todayActivities.forEach((activity) => {
-      repsPerExerciseToday[activity.exercise_id] =
-        (repsPerExerciseToday[activity.exercise_id] || 0) + activity.reps;
-    });
-
-    return {
-      totalSetsToday: todayActivities.length,
-      totalRepsToday: todayActivities.reduce((total, activity) => total + activity.reps, 0),
-      repsPerExerciseToday,
-    };
-  }, [history, lastSessionStart]);
+  // Dashboard "Today" is calendar-based, not game-session-based. A missing or stale session
+  // boundary must never hide an activity that was already saved today.
+  const stats = useMemo(() => calculateTodayStats(history), [history]);
 
   return {
     history,
