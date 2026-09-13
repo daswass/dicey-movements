@@ -72,8 +72,13 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Routes
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Backend server is running!" });
+app.get("/api/health", async (_req, res) => {
+  const { error } = await supabase.from("activities").select("id", { head: true, count: "exact" }).limit(1);
+  if (error) {
+    console.error("Backend database health check failed:", error.message);
+    return res.status(503).json({ status: "degraded", database: "unavailable" });
+  }
+  return res.json({ status: "ok", message: "Backend server is running!", database: "ok" });
 });
 
 // Oura Integration Routes
