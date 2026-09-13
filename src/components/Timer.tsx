@@ -150,9 +150,15 @@ const Timer: React.FC<TimerProps> = ({
     console.log("Timer component - Resume button clicked.");
     resumeTimer();
 
+    // Resume must become authoritative again. Pause intentionally clears the prior master;
+    // without a new persisted start time, a reload or second device loses the resumed timer.
+    void timerSyncService.startTimerSync(timeLeft).catch((error) => {
+      console.error("Timer: Error resuming timer sync:", error);
+    });
+
     // Clear any lingering timer notifications when resuming
     clearNotificationsSafely();
-  }, [resumeTimer, clearNotificationsSafely]);
+  }, [resumeTimer, timeLeft, clearNotificationsSafely]);
 
   const handleReset = useCallback(() => {
     console.log("Timer component - Reset button clicked.");
