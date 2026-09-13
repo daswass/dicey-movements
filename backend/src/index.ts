@@ -20,6 +20,7 @@ import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
 import {
   recordWorkoutCompletion,
+  drainRecoverableWorkoutCompletionEffects,
   runWorkoutCompletionEffects,
   validateWorkoutCompletion,
 } from "./workoutCompletionService";
@@ -544,8 +545,19 @@ app.put(
 
 // Start server
 const PORT = process.env.PORT || 3001;
+const recoveryIntervalMs = Number(process.env.WORKOUT_EFFECT_RECOVERY_INTERVAL_MS) || 60_000;
+const runWorkoutEffectRecovery = () => {
+  void drainRecoverableWorkoutCompletionEffects(supabase, pushNotificationService)
+    .then((count) => {
+      if (count > 0) console.log(`Recovered ${count} workout completion effect(s)`);
+    })
+    .catch((error) => console.error("Error recovering workout completion effects:", error));
+};
+
 app.listen(PORT, () => {
   console.log(`🚀 Backend server running on port ${PORT}`);
   console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔗 Oura endpoints available at http://localhost:${PORT}/api/oura/*`);
+  runWorkoutEffectRecovery();
+  setInterval(runWorkoutEffectRecovery, recoveryIntervalMs).unref();
 });

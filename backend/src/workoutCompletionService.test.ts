@@ -1,4 +1,5 @@
 import {
+  drainRecoverableWorkoutCompletionEffects,
   recordWorkoutCompletion,
   runWorkoutCompletionEffects,
   validateWorkoutCompletion,
@@ -71,9 +72,72 @@ describe("workout completion service", () => {
     ).resolves.toBeUndefined();
     expect(rpc).toHaveBeenCalledWith("claim_workout_completion_effects", {
       p_activity_id: input.activityId,
+      p_lease_token: expect.any(String),
+      p_lease_seconds: 300,
     });
     expect(from).not.toHaveBeenCalled();
     expect(push.sendAchievementNotification).not.toHaveBeenCalled();
     expect(push.sendFriendActivityNotification).not.toHaveBeenCalled();
+  });
+
+  it("drains service-role recovery rows through the same leased effect path", async () => {
+    const recoveryActivity = {
+      id: input.activityId,
+      user_id: "authenticated-user",
+      timestamp: input.timestamp,
+      exercise_id: input.exerciseId,
+      exercise_name: input.exerciseName,
+      reps: input.reps,
+      multiplier: input.multiplier,
+      dice_roll: input.diceRoll,
+      zone_id: input.zoneId,
+    };
+    const rpc = jest.fn().mockImplementation((name: string) => {
+      if (name === "list_recoverable_workout_completion_effects") {
+        return Promise.resolve({ data: [{ activity: recoveryActivity }], error: null });
+      }
+      return Promise.resolve({ data: false, error: null });
+    });
+    const from = jest.fn(() => {
+      throw new Error("an unclaimed recovery row must not execute effects");
+    });
+    const push = {
+      sendAchievementNotification: jest.fn(),
+      sendFriendActivityNotification: jest.fn(),
+    };
+
+    await expect(
+      drainRecoverableWorkoutCompletionEffects(
+        { rpc, from } as unknown as Parameters<typeof drainRecoverableWorkoutCompletionEffects>[0],
+        push
+      )
+    ).resolves.toBe(1);
+    expect(rpc).toHaveBeenNthCalledWith(1, "list_recoverable_workout_completion_effects", { p_limit: 100 });
+    expect(rpc).toHaveBeenNthCalledWith(2, "claim_workout_completion_effects", {
+      p_activity_id: input.activityId,
+      p_lease_token: expect.any(String),
+      p_lease_seconds: 300,
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("shares an in-flight recovery drain instead of overlapping interval work", async () => {
+    let resolveRecovery!: (value: { data: []; error: null }) => void;
+    const rpc = jest.fn(
+      () => new Promise<{ data: []; error: null }>((resolve) => { resolveRecovery = resolve; })
+    );
+    const db = { rpc } as unknown as Parameters<typeof drainRecoverableWorkoutCompletionEffects>[0];
+    const push = {
+      sendAchievementNotification: jest.fn(),
+      sendFriendActivityNotification: jest.fn(),
+    };
+
+    const first = drainRecoverableWorkoutCompletionEffects(db, push);
+    const second = drainRecoverableWorkoutCompletionEffects(db, push);
+    expect(second).toBe(first);
+    expect(rpc).toHaveBeenCalledTimes(1);
+
+    resolveRecovery({ data: [], error: null });
+    await expect(first).resolves.toBe(0);
   });
 });

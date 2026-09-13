@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 
 export interface WorkoutCompletionInput {
   activityId: string;
@@ -15,6 +16,22 @@ export interface WorkoutCompletionRecord {
   activity: WorkoutCompletionInput & { user_id: string };
   created: boolean;
 }
+
+type RecoveryActivityRow = {
+  id: string;
+  user_id: string;
+  timestamp: string;
+  exercise_id: number;
+  exercise_name: string;
+  reps: number;
+  multiplier: number;
+  dice_roll: WorkoutCompletionInput["diceRoll"];
+  zone_id: string | null;
+};
+
+const EFFECT_LEASE_SECONDS = 300;
+const RECOVERY_BATCH_SIZE = 100;
+let recoveryDrain: Promise<number> | null = null;
 
 export interface WorkoutCompletionPushService {
   sendAchievementNotification(userId: string, achievementName: string): Promise<boolean>;
@@ -117,17 +134,28 @@ export async function recordWorkoutCompletion(
   return data[0] as WorkoutCompletionRecord;
 }
 
-async function claimPostCommitEffects(db: Pick<SupabaseClient, "rpc">, activityId: string) {
+async function claimPostCommitEffects(
+  db: Pick<SupabaseClient, "rpc">,
+  activityId: string,
+  leaseToken: string
+) {
   const { data, error } = await db.rpc("claim_workout_completion_effects", {
     p_activity_id: activityId,
+    p_lease_token: leaseToken,
+    p_lease_seconds: EFFECT_LEASE_SECONDS,
   });
   if (error) throw new Error(error.message);
   return data === true;
 }
 
-async function finishPostCommitEffects(db: Pick<SupabaseClient, "rpc">, activityId: string) {
+async function finishPostCommitEffects(
+  db: Pick<SupabaseClient, "rpc">,
+  activityId: string,
+  leaseToken: string
+) {
   const { error } = await db.rpc("finish_workout_completion_effects", {
     p_activity_id: activityId,
+    p_lease_token: leaseToken,
   });
   if (error) throw new Error(error.message);
 }
@@ -232,7 +260,8 @@ export async function runWorkoutCompletionEffects(
   userId: string,
   activity: WorkoutCompletionInput
 ): Promise<void> {
-  if (!(await claimPostCommitEffects(db, activity.activityId))) return;
+  const leaseToken = randomUUID();
+  if (!(await claimPostCommitEffects(db, activity.activityId, leaseToken))) return;
 
   try {
     const achievementNames = await unlockCompletionAchievements(db, userId, activity);
@@ -241,6 +270,47 @@ export async function runWorkoutCompletionEffects(
       ...achievementNames.map((name) => push.sendAchievementNotification(userId, name)),
     ]);
   } finally {
-    await finishPostCommitEffects(db, activity.activityId);
+    await finishPostCommitEffects(db, activity.activityId, leaseToken);
   }
+}
+
+/**
+ * Drains effects left pending (or abandoned after a lease expires). The module-level promise
+ * prevents an interval tick from overlapping startup recovery in a single backend process;
+ * database leases prevent duplicate work across backend processes.
+ */
+export function drainRecoverableWorkoutCompletionEffects(
+  db: SupabaseClient,
+  push: WorkoutCompletionPushService
+): Promise<number> {
+  if (recoveryDrain) return recoveryDrain;
+
+  const drain = (async () => {
+    const { data, error } = await db.rpc("list_recoverable_workout_completion_effects", {
+      p_limit: RECOVERY_BATCH_SIZE,
+    });
+    if (error) throw new Error(error.message);
+
+    const recoverable = (data || []) as Array<{ activity: RecoveryActivityRow }>;
+    await Promise.allSettled(
+      recoverable.map(({ activity }) =>
+        runWorkoutCompletionEffects(db, push, activity.user_id, {
+          activityId: activity.id,
+          timestamp: activity.timestamp,
+          exerciseId: activity.exercise_id,
+          exerciseName: activity.exercise_name,
+          reps: activity.reps,
+          multiplier: activity.multiplier,
+          diceRoll: activity.dice_roll,
+          zoneId: activity.zone_id,
+        })
+      )
+    );
+    return recoverable.length;
+  })();
+
+  recoveryDrain = drain.finally(() => {
+    recoveryDrain = null;
+  });
+  return recoveryDrain;
 }
