@@ -25,7 +25,7 @@ import {
   validateWorkoutCompletion,
 } from "./workoutCompletionService";
 import { isValidOuraWebhookToken } from "./webhookAuth";
-import { requireBoundedInteger } from "./requestValidation";
+import { requireBoolean, requireBoundedInteger, requireBoundedString, requireUuid } from "./requestValidation";
 
 // Load environment variables
 dotenv.config();
@@ -418,11 +418,9 @@ app.post(
   requireSelfFromUserIdField("fromUserId"),
   async (req, res) => {
   try {
-    const { fromUserId, toUserId, activity } = req.body;
-
-    if (!fromUserId || !toUserId) {
-      return res.status(400).json({ error: "fromUserId and toUserId are required" });
-    }
+    const fromUserId = requireUuid(req.body?.fromUserId, "fromUserId");
+    const toUserId = requireUuid(req.body?.toUserId, "toUserId");
+    const activity = requireBoundedString(req.body?.activity, "activity", 200);
 
     // Get sender's profile
     const { data: senderProfile, error: senderError } = await supabase
@@ -471,6 +469,9 @@ app.post(
       res.status(500).json({ error: "Failed to send high five notification" });
     }
   } catch (error) {
+    if (error instanceof Error && /must be a UUID|must be a non-empty string/.test(error.message)) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error("Error sending high five:", error);
     res.status(500).json({ error: "Failed to send high five" });
   }
@@ -484,17 +485,12 @@ app.put(
   async (req, res) => {
   try {
     const { userId } = req.params;
-    const { setting, enabled } = req.body;
-
-    if (!userId || setting === undefined || enabled === undefined) {
-      return res.status(400).json({ error: "userId, setting, and enabled are required" });
-    }
-
-    // Validate setting name
-    const validSettings = ["timer_expired", "achievements", "friend_activity", "friend_requests"];
-    if (!validSettings.includes(setting)) {
+    const validSettings = ["timer_expired", "achievements", "friend_activity", "friend_requests"] as const;
+    const setting = req.body?.setting;
+    if (typeof setting !== "string" || !validSettings.includes(setting as typeof validSettings[number])) {
       return res.status(400).json({ error: "Invalid setting name" });
     }
+    const enabled = requireBoolean(req.body?.enabled, "enabled");
 
     // First get current settings
     console.log("Fetching notification settings for user:", userId);
@@ -539,6 +535,9 @@ app.put(
       settings: data.notification_settings,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "enabled must be a boolean") {
+      return res.status(400).json({ error: error.message });
+    }
     console.error("Error updating notification settings:", error);
     res.status(500).json({ error: "Failed to update notification settings" });
   }
