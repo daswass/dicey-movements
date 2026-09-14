@@ -16,7 +16,7 @@ interface DashboardModalsProps {
   notificationsEnabled: boolean;
   updateNotificationsEnabled: (enabled: boolean) => void;
   onUserProfileUpdate: (profile: UserProfile) => void;
-  workoutCompleteModal: { heist?: WorkoutCompleteHeistInfo; onDismiss?: () => void } | null;
+  workoutCompleteModal: { heist?: WorkoutCompleteHeistInfo; isSaving?: boolean; onDismiss?: () => void } | null;
   showConfirmModal: boolean;
   confirmModalType: "game" | "multipliers" | null;
   onConfirmReset: () => void;
@@ -83,6 +83,7 @@ export default function DashboardModals({
       {workoutCompleteModal && (
         <WorkoutCompleteModal
           heist={workoutCompleteModal.heist}
+          isSaving={workoutCompleteModal.isSaving}
           onDismiss={workoutCompleteModal.onDismiss}
         />
       )}

@@ -161,6 +161,7 @@ const Dashboard: React.FC<DashboardProps> = React.memo(
       setTimerComplete,
       setLatestSession,
       setIsRollAndStartMode,
+      userProfile,
       setUserProfile,
       fetchHistory,
       resetNotificationFlags,

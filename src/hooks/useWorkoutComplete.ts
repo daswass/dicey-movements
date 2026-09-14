@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { WorkoutSession } from "../types";
 import { UserProfile } from "../types/social";
 import { api } from "../utils/api";
@@ -12,6 +12,7 @@ import { WorkoutCompleteHeistInfo } from "../components/WorkoutCompleteModal";
 
 export interface WorkoutCompleteModalState {
   heist?: WorkoutCompleteHeistInfo;
+  isSaving?: boolean;
   onDismiss?: () => void;
 }
 
@@ -26,6 +27,7 @@ interface UseWorkoutCompleteOptions {
   setTimerComplete: (value: boolean) => void;
   setLatestSession: (value: WorkoutSession | null) => void;
   setIsRollAndStartMode: (value: boolean) => void;
+  userProfile: UserProfile | null;
   setUserProfile: Dispatch<SetStateAction<UserProfile | null>>;
   fetchHistory: () => Promise<void>;
   resetNotificationFlags: () => void;
@@ -47,40 +49,48 @@ export function useWorkoutComplete({
   setTimerComplete,
   setLatestSession,
   setIsRollAndStartMode,
+  userProfile,
   setUserProfile,
   fetchHistory,
   resetNotificationFlags,
   onStartTimer,
 }: UseWorkoutCompleteOptions) {
+  // State updates do not synchronously disable a second click. Keep a ref as the authoritative
+  // in-flight guard so one session UUID can produce at most one client completion attempt.
+  const completionInFlightRef = useRef(false);
+
   const handleWorkoutComplete = useCallback(async () => {
-    if (isCompletingWorkout || !latestSession || !userId) return;
+    if (completionInFlightRef.current || isCompletingWorkout || !latestSession || !userId) return;
 
     const session = latestSession;
+    const { zoneId, zoneInfo } = buildZoneFromLocation(userProfile?.location);
+    completionInFlightRef.current = true;
     setIsCompletingWorkout(true);
     setCompletionError(null);
+    // Give immediate feedback and keep the current session recoverable until the server accepts it.
+    setWorkoutCompleteModal({ isSaving: true });
 
-    let completion;
-    let zoneId: string | null = null;
-    let zoneInfo: ReturnType<typeof buildZoneFromLocation>["zoneInfo"] = null;
-    try {
-      try {
-        const freshLocation = await getUserLocation({ fresh: true });
-        ({ zoneId, zoneInfo } = buildZoneFromLocation(freshLocation));
-        if (zoneId && freshLocation.coordinates.latitude !== 0) {
-          setUserProfile((previous) => (previous ? { ...previous, location: freshLocation } : null));
-          void supabase
-            .from("profiles")
-            .update({ location: freshLocation })
-            .eq("id", userId)
-            .then(({ error }) => {
-              if (error) console.error("useWorkoutComplete: Error updating profile location:", error);
-            });
-        }
-      } catch (error) {
+    // A fresh GPS/geocoding lookup can take ten seconds. It enriches future workouts and the
+    // profile, but must never hold this completion hostage or change its idempotency semantics.
+    void getUserLocation({ fresh: true })
+      .then((freshLocation) => {
+        if (freshLocation.coordinates.latitude === 0) return;
+        setUserProfile((previous) => (previous ? { ...previous, location: freshLocation } : null));
+        return supabase
+          .from("profiles")
+          .update({ location: freshLocation })
+          .eq("id", userId)
+          .then(({ error }) => {
+            if (error) console.error("useWorkoutComplete: Error updating profile location:", error);
+          });
+      })
+      .catch((error) => {
         // Location enriches a workout but must never stop a durable completion from retrying.
         console.warn("useWorkoutComplete: Unable to refresh location:", error);
-      }
+      });
 
+    let completion;
+    try {
       completion = await api.completeWorkout({
         activityId: session.id,
         timestamp: new Date(session.timestamp).toISOString(),
@@ -97,11 +107,13 @@ export function useWorkoutComplete({
     } catch (error) {
       console.error("useWorkoutComplete: Error syncing workout completion:", error);
       const message = error instanceof Error ? error.message : "";
+      setWorkoutCompleteModal(null);
       setCompletionError(
         message.startsWith("API 401:")
           ? "Your session expired. Reload Dicey, sign in if prompted, then retry this same workout."
           : "Workout was not synced. Retry to safely send the same workout."
       );
+      completionInFlightRef.current = false;
       setIsCompletingWorkout(false);
       return;
     }
@@ -116,7 +128,10 @@ export function useWorkoutComplete({
     });
 
     let restartTimerId: ReturnType<typeof setTimeout> | undefined;
+    let hasRestarted = false;
     const restartWorkout = () => {
+      if (hasRestarted) return;
+      hasRestarted = true;
       if (restartTimerId) clearTimeout(restartTimerId);
       setWorkoutCompleteModal(null);
       setCurrentWorkoutComplete(false);
@@ -127,6 +142,7 @@ export function useWorkoutComplete({
       clearPendingWorkout(userId);
       setLatestSession(null);
       setIsRollAndStartMode(false);
+      completionInFlightRef.current = false;
       setIsCompletingWorkout(false);
     };
     const scheduleRestart = (delayMs: number) => {
@@ -134,48 +150,46 @@ export function useWorkoutComplete({
       restartTimerId = setTimeout(restartWorkout, delayMs);
     };
 
-    let heistResult = null;
-    try {
-      // Derived territory effects and refreshed UI data are non-critical after the server has
-      // accepted the workout. They may be retried on the next load without replaying activity.
-      if (completion.created && zoneId && zoneInfo) {
-        heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
-      }
-
-      await fetchHistory();
-      const { data: updatedProfile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-      if (updatedProfile && !profileError) {
-        setUserProfile({ ...updatedProfile, timer_duration: updatedProfile.timer_duration || 300 });
-      }
-    } catch (error) {
-      console.error("useWorkoutComplete: Post-completion refresh failed:", error);
-    }
-
-    if (heistResult) {
-      const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
-      if (heistResult.isHeist || canNameZone) {
-        setWorkoutCompleteModal({
-          heist: {
-            zoneId: heistResult.zoneInfo.id,
-            zoneName: heistResult.zoneInfo.displayName,
-            previousCaptain: heistResult.previousCaptain,
-            totalReps: heistResult.newTotalReps,
-            isHeist: heistResult.isHeist,
-            canNameZone,
-          },
-          onDismiss: restartWorkout,
-        });
-        if (!canNameZone) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
-        return;
-      }
-    }
-
+    // Progress in place as soon as the durable write has acknowledged. Refreshes and derived
+    // territory presentation happen in the background and must not make the exercise screen wait.
     setWorkoutCompleteModal({});
     scheduleRestart(2000);
+
+    void (async () => {
+      try {
+        if (completion.created && zoneId && zoneInfo) {
+          const heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
+          const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
+          if (!hasRestarted && (heistResult.isHeist || canNameZone)) {
+            if (restartTimerId) clearTimeout(restartTimerId);
+            setWorkoutCompleteModal({
+              heist: {
+                zoneId: heistResult.zoneInfo.id,
+                zoneName: heistResult.zoneInfo.displayName,
+                previousCaptain: heistResult.previousCaptain,
+                totalReps: heistResult.newTotalReps,
+                isHeist: heistResult.isHeist,
+                canNameZone,
+              },
+              onDismiss: restartWorkout,
+            });
+            if (!canNameZone) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
+          }
+        }
+
+        void fetchHistory();
+        const { data: updatedProfile, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .single();
+        if (updatedProfile && !profileError && !hasRestarted) {
+          setUserProfile({ ...updatedProfile, timer_duration: updatedProfile.timer_duration || 300 });
+        }
+      } catch (error) {
+        console.error("useWorkoutComplete: Post-completion refresh failed:", error);
+      }
+    })();
   }, [
     isCompletingWorkout,
     latestSession,
@@ -189,6 +203,7 @@ export function useWorkoutComplete({
     setIsRollAndStartMode,
     setLatestSession,
     setTimerComplete,
+    userProfile?.location,
     setUserProfile,
     setWorkoutCompleteModal,
   ]);

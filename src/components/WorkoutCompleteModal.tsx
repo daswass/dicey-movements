@@ -14,6 +14,7 @@ export interface WorkoutCompleteHeistInfo {
 
 interface WorkoutCompleteModalProps {
   heist?: WorkoutCompleteHeistInfo;
+  isSaving?: boolean;
   onDismiss?: () => void;
 }
 
@@ -53,7 +54,7 @@ function fireConfetti() {
   burst();
 }
 
-export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heist, onDismiss }) => {
+export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heist, isSaving = false, onDismiss }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [zoneNameInput, setZoneNameInput] = useState("");
   const [namingError, setNamingError] = useState<string | null>(null);
@@ -107,7 +108,13 @@ export const WorkoutCompleteModal: React.FC<WorkoutCompleteModalProps> = ({ heis
             ? "bg-gradient-to-br from-purple-900 via-gray-900 to-red-900 border-2 border-yellow-400 rounded-2xl shadow-2xl p-8"
             : "bg-gray-800 rounded-lg shadow-xl p-8"
         }`}>
-        {showSheisterUI ? (
+        {isSaving ? (
+          <>
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-green-400 border-t-transparent" />
+            <h2 className="text-xl font-semibold text-white">Saving workout…</h2>
+            <p className="mt-2 text-sm text-gray-300">Your completed exercise is being saved safely.</p>
+          </>
+        ) : showSheisterUI ? (
           <>
             {isHeist ?
               <>
