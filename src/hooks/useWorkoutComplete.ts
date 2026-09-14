@@ -149,6 +149,13 @@ export function useWorkoutComplete({
       if (restartTimerId) clearTimeout(restartTimerId);
       restartTimerId = setTimeout(restartWorkout, delayMs);
     };
+    const dismissHeist = () => {
+      if (hasRestarted) {
+        setWorkoutCompleteModal(null);
+        return;
+      }
+      restartWorkout();
+    };
 
     // Progress in place as soon as the durable write has acknowledged. Refreshes and derived
     // territory presentation happen in the background and must not make the exercise screen wait.
@@ -160,8 +167,8 @@ export function useWorkoutComplete({
         if (completion.created && zoneId && zoneInfo) {
           const heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
           const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
-          if (!hasRestarted && (heistResult.isHeist || canNameZone)) {
-            if (restartTimerId) clearTimeout(restartTimerId);
+          if (heistResult.isHeist || canNameZone) {
+            if (!hasRestarted && restartTimerId) clearTimeout(restartTimerId);
             setWorkoutCompleteModal({
               heist: {
                 zoneId: heistResult.zoneInfo.id,
@@ -171,9 +178,11 @@ export function useWorkoutComplete({
                 isHeist: heistResult.isHeist,
                 canNameZone,
               },
-              onDismiss: restartWorkout,
+              // A slow heist check can finish after the next exercise begins. Keep the reward
+              // visible in that case without replaying the already-restarted workout state.
+              onDismiss: dismissHeist,
             });
-            if (!canNameZone) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
+            if (!canNameZone && !hasRestarted) scheduleRestart(heistResult.isHeist ? 3500 : 2000);
           }
         }
 
