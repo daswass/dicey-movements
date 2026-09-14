@@ -68,7 +68,7 @@ export default function DashboardModals({
               &times;
             </button>
             <SettingsPanel
-              timerDuration={timerDuration}
+              timerDuration={timerDuration ?? 300}
               updateTimerDuration={updateTimerDuration}
               notificationsEnabled={notificationsEnabled}
               updateNotificationsEnabled={updateNotificationsEnabled}

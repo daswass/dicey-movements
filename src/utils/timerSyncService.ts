@@ -29,7 +29,7 @@ class TimerSyncService {
     this.channelManager = createSupabaseChannel({
       name: "timer-sync",
       supabase,
-      onStatusChange: (status) => {},
+      onStatusChange: () => {},
       onError: (error) => {
         console.error("TimerSyncService: Error in channel:", error);
       },

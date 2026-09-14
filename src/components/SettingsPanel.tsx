@@ -3,7 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { OuraService, type OuraStatus } from "../utils/ouraService";
 import NotificationPermission from "./NotificationPermission";
 import NotificationSettings from "./NotificationSettings";
-import { Activity, CheckCircle, XCircle, RefreshCw, Link, Unlink } from "lucide-react";
+import { Activity, CheckCircle, XCircle, Link, Unlink } from "lucide-react";
 
 interface SettingsPanelProps {
   timerDuration: number;
@@ -29,8 +29,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [ouraStatus, setOuraStatus] = useState<OuraStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState("");
 
   useEffect(() => {
     if (user?.id) {
@@ -79,31 +77,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   };
 
-  const handleSyncOura = async () => {
-    if (!user?.id) return;
-
-    setIsSyncing(true);
-    setSyncMessage("Syncing activity data...");
-    try {
-      await OuraService.syncActivity(user.id, 7);
-      setSyncMessage("Activity data synced successfully!");
-      setTimeout(() => setSyncMessage(""), 3000);
-    } catch (error) {
-      console.error("Error syncing Oura activity:", error);
-      setSyncMessage("Failed to sync activity data. Please try again.");
-      setTimeout(() => setSyncMessage(""), 5000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleSave = () => {
     updateTimerDuration(timerValue);
     onClose();
-  };
-
-  const handleToggleNotifications = () => {
-    updateNotificationsEnabled(!notificationsEnabled);
   };
 
   return (
@@ -225,17 +201,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               )}
             </div>
 
-            {/* Sync Message */}
-            {syncMessage && (
-              <div
-                className={`text-sm p-2 rounded ${
-                  syncMessage.includes("successfully")
-                    ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
-                    : "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"
-                }`}>
-                {syncMessage}
-              </div>
-            )}
           </div>
         </div>
       </div>
