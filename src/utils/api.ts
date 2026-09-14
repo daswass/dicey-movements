@@ -17,6 +17,12 @@ export interface WorkoutCompletionResponse {
   activity: WorkoutCompletionRequest & { user_id: string };
 }
 
+export interface ActivityZoneAttachmentResponse {
+  success: true;
+  attached: boolean;
+  activity: WorkoutCompletionRequest & { user_id: string };
+}
+
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -110,6 +116,16 @@ export const api = {
     return this.fetch("/api/workout/complete", {
       method: "POST",
       body: JSON.stringify(completion),
+    });
+  },
+
+  async attachActivityZone(
+    activityId: string,
+    zoneId: string
+  ): Promise<ActivityZoneAttachmentResponse> {
+    return this.fetch(`/api/workout/${encodeURIComponent(activityId)}/zone`, {
+      method: "POST",
+      body: JSON.stringify({ zoneId }),
     });
   },
 };

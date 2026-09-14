@@ -37,6 +37,25 @@ describe("api.completeWorkout", () => {
     );
   });
 
+  it("posts delayed zone attachment to the authenticated backend endpoint", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, attached: true, activity: completion }),
+    } as Response);
+
+    await expect(api.attachActivityZone(completion.activityId, "2037_-3699")).resolves.toMatchObject({
+      attached: true,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      `${api.baseUrl}/api/workout/${completion.activityId}/zone`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ zoneId: "2037_-3699" }),
+        headers: expect.objectContaining({ Authorization: "Bearer access-token" }),
+      })
+    );
+  });
+
   it("preserves the backend error detail for completion failures", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: false,

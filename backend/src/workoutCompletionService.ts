@@ -17,6 +17,16 @@ export interface WorkoutCompletionRecord {
   created: boolean;
 }
 
+export interface ActivityZoneAttachmentInput {
+  activityId: string;
+  zoneId: string;
+}
+
+export interface ActivityZoneAttachmentRecord {
+  activity: WorkoutCompletionInput & { user_id: string };
+  attached: boolean;
+}
+
 type RecoveryActivityRow = {
   id: string;
   user_id: string;
@@ -44,6 +54,11 @@ export interface WorkoutCompletionPushService {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ZONE_ID_PATTERN = /^-?\d+_-?\d+$/;
+const MIN_LATITUDE_ZONE_INDEX = -4500;
+const MAX_LATITUDE_ZONE_INDEX = 4500;
+const MIN_LONGITUDE_ZONE_INDEX = -9000;
+const MAX_LONGITUDE_ZONE_INDEX = 9000;
 
 const completionAchievements = [
   { id: "first_streak", name: "Getting Started", type: "streak", value: 3 },
@@ -109,6 +124,27 @@ export function validateWorkoutCompletion(input: unknown): asserts input is Work
   }
 }
 
+export function validateActivityZoneAttachment(input: unknown): asserts input is ActivityZoneAttachmentInput {
+  const value = input as Partial<ActivityZoneAttachmentInput> | null;
+  if (!value || typeof value !== "object" || !UUID_PATTERN.test(value.activityId ?? "")) {
+    throw new Error("activityId must be a UUID");
+  }
+  if (typeof value.zoneId !== "string" || value.zoneId.length > 32 || !ZONE_ID_PATTERN.test(value.zoneId)) {
+    throw new Error("zoneId must be a valid zone identifier");
+  }
+  const [latIndex, lngIndex] = value.zoneId.split("_").map(Number);
+  if (
+    !Number.isSafeInteger(latIndex) ||
+    !Number.isSafeInteger(lngIndex) ||
+    latIndex < MIN_LATITUDE_ZONE_INDEX ||
+    latIndex > MAX_LATITUDE_ZONE_INDEX ||
+    lngIndex < MIN_LONGITUDE_ZONE_INDEX ||
+    lngIndex > MAX_LONGITUDE_ZONE_INDEX
+  ) {
+    throw new Error("zoneId must be a valid zone identifier");
+  }
+}
+
 export async function recordWorkoutCompletion(
   db: Pick<SupabaseClient, "rpc">,
   userId: string,
@@ -132,6 +168,29 @@ export async function recordWorkoutCompletion(
   }
 
   return data[0] as WorkoutCompletionRecord;
+}
+
+/**
+ * Attaches a zone only after completion when location became available. The database RPC owns
+ * authorization and compare-and-set behavior so retries are safe across backend instances.
+ */
+export async function attachActivityZone(
+  db: Pick<SupabaseClient, "rpc">,
+  userId: string,
+  input: ActivityZoneAttachmentInput
+): Promise<ActivityZoneAttachmentRecord> {
+  validateActivityZoneAttachment(input);
+  const { data, error } = await db.rpc("attach_activity_zone", {
+    p_activity_id: input.activityId,
+    p_user_id: userId,
+    p_zone_id: input.zoneId,
+  });
+
+  if (error || !data?.[0]) {
+    throw new Error(error?.message || "Failed to attach activity zone");
+  }
+
+  return data[0] as ActivityZoneAttachmentRecord;
 }
 
 async function claimPostCommitEffects(

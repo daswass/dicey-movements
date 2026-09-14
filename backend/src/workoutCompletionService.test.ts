@@ -1,7 +1,9 @@
 import {
+  attachActivityZone,
   drainRecoverableWorkoutCompletionEffects,
   recordWorkoutCompletion,
   runWorkoutCompletionEffects,
+  validateActivityZoneAttachment,
   validateWorkoutCompletion,
 } from "./workoutCompletionService";
 
@@ -50,6 +52,42 @@ describe("workout completion service", () => {
       p_dice_roll: input.diceRoll,
       p_zone_id: input.zoneId,
     });
+  });
+
+  it("attaches a valid delayed zone through the owner-scoped RPC", async () => {
+    const attachment = { activity: { ...input, user_id: "authenticated-user" }, attached: true };
+    const rpc = jest.fn().mockResolvedValue({ data: [attachment], error: null });
+
+    await expect(
+      attachActivityZone(
+        { rpc } as unknown as Parameters<typeof attachActivityZone>[0],
+        "authenticated-user",
+        { activityId: input.activityId, zoneId: "2037_-3699" }
+      )
+    ).resolves.toEqual(attachment);
+    expect(rpc).toHaveBeenCalledWith("attach_activity_zone", {
+      p_activity_id: input.activityId,
+      p_user_id: "authenticated-user",
+      p_zone_id: "2037_-3699",
+    });
+  });
+
+  it("rejects malformed attachment identifiers before invoking the database", async () => {
+    const rpc = jest.fn();
+    expect(() => validateActivityZoneAttachment({ activityId: input.activityId, zoneId: "zone-1" })).toThrow(
+      "zoneId must be a valid zone identifier"
+    );
+    expect(() => validateActivityZoneAttachment({ activityId: input.activityId, zoneId: "4501_0" })).toThrow(
+      "zoneId must be a valid zone identifier"
+    );
+    await expect(
+      attachActivityZone(
+        { rpc } as unknown as Parameters<typeof attachActivityZone>[0],
+        "authenticated-user",
+        { activityId: input.activityId, zoneId: "not-a-zone" }
+      )
+    ).rejects.toThrow("zoneId must be a valid zone identifier");
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("does not rerun post-commit effects when the effect row was already claimed", async () => {

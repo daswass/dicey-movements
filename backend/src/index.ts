@@ -20,8 +20,10 @@ import { pushNotificationService } from "./pushNotificationService";
 import { supabase } from "./supabaseClient";
 import {
   recordWorkoutCompletion,
+  attachActivityZone,
   drainRecoverableWorkoutCompletionEffects,
   runWorkoutCompletionEffects,
+  validateActivityZoneAttachment,
   validateWorkoutCompletion,
 } from "./workoutCompletionService";
 import { isValidOuraWebhookToken } from "./webhookAuth";
@@ -409,6 +411,29 @@ app.post("/api/workout/complete", requireAuth, async (req, res) => {
     }
     console.error("Error completing workout:", error);
     res.status(500).json({ error: "Failed to complete workout" });
+  }
+});
+
+app.post("/api/workout/:activityId/zone", requireAuth, async (req, res) => {
+  try {
+    const input = { activityId: requireUuid(req.params.activityId, "activityId"), zoneId: req.body?.zoneId };
+    validateActivityZoneAttachment(input);
+    const attachment = await attachActivityZone(supabase, req.authUser!.id, input);
+    return res.status(attachment.attached ? 201 : 200).json({ success: true, ...attachment });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (/must be a UUID|must be a valid zone identifier/.test(error.message)) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (/not found or not owned/.test(error.message)) {
+        return res.status(403).json({ error: "Only the activity owner can attach a zone" });
+      }
+      if (/zone is already attached/.test(error.message)) {
+        return res.status(409).json({ error: "Activity already has a different zone" });
+      }
+    }
+    console.error("Error attaching activity zone:", error);
+    return res.status(500).json({ error: "Failed to attach activity zone" });
   }
 });
 
