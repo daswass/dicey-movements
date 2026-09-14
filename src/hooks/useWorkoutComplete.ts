@@ -63,30 +63,30 @@ export function useWorkoutComplete({
     if (completionInFlightRef.current || isCompletingWorkout || !latestSession || !userId) return;
 
     const session = latestSession;
-    const { zoneId, zoneInfo } = buildZoneFromLocation(userProfile?.location);
     completionInFlightRef.current = true;
     setIsCompletingWorkout(true);
     setCompletionError(null);
     // Give immediate feedback and keep the current session recoverable until the server accepts it.
     setWorkoutCompleteModal({ isSaving: true });
 
-    // A fresh GPS/geocoding lookup can take ten seconds. It enriches future workouts and the
-    // profile, but must never hold this completion hostage or change its idempotency semantics.
-    void getUserLocation({ fresh: true })
+    // Location is authoritative for zone ownership but it is not needed to durably record the
+    // exercise. Start it now and attach its result to this exact activity after the fast save.
+    const freshLocationPromise = getUserLocation({ fresh: true })
       .then((freshLocation) => {
-        if (freshLocation.coordinates.latitude === 0) return;
+        if (freshLocation.coordinates.latitude === 0) return null;
         setUserProfile((previous) => (previous ? { ...previous, location: freshLocation } : null));
-        return supabase
+        void supabase
           .from("profiles")
           .update({ location: freshLocation })
           .eq("id", userId)
           .then(({ error }) => {
             if (error) console.error("useWorkoutComplete: Error updating profile location:", error);
           });
+        return freshLocation;
       })
       .catch((error) => {
-        // Location enriches a workout but must never stop a durable completion from retrying.
         console.warn("useWorkoutComplete: Unable to refresh location:", error);
+        return null;
       });
 
     let completion;
@@ -99,7 +99,9 @@ export function useWorkoutComplete({
         reps: session.reps,
         multiplier: session.multiplier,
         diceRoll: session.diceRoll,
-        zoneId,
+        // The fresh zone is attached after this durable exercise insert. Never claim a zone
+        // using stale profile location merely to make the save appear faster.
+        zoneId: null,
       });
 
       // Only a request failure means the workout was not synced. Everything below is UI-only
@@ -164,7 +166,11 @@ export function useWorkoutComplete({
 
     void (async () => {
       try {
+        const freshLocation = await freshLocationPromise;
+        const { zoneId, zoneInfo } = buildZoneFromLocation(freshLocation || undefined);
         if (completion.created && zoneId && zoneInfo) {
+          const attachment = await api.attachActivityZone(session.id, zoneId);
+          if (!attachment.attached) return;
           const heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
           const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
           if (heistResult.isHeist || canNameZone) {
@@ -212,7 +218,6 @@ export function useWorkoutComplete({
     setIsRollAndStartMode,
     setLatestSession,
     setTimerComplete,
-    userProfile?.location,
     setUserProfile,
     setWorkoutCompleteModal,
   ]);
