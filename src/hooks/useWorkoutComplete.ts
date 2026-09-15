@@ -6,7 +6,7 @@ import { notificationService } from "../utils/notificationService";
 import { getUserLocation } from "../utils/socialService";
 import { supabase } from "../utils/supabaseClient";
 import { clearPendingWorkout } from "../utils/workoutRecovery";
-import { buildZoneFromLocation, checkDiceHeist } from "../utils/zoneService";
+import { buildZoneFromLocation, checkDiceHeist, fetchZoneCaptain } from "../utils/zoneService";
 import type { Dispatch, SetStateAction } from "react";
 import { WorkoutCompleteHeistInfo } from "../components/WorkoutCompleteModal";
 
@@ -27,7 +27,6 @@ interface UseWorkoutCompleteOptions {
   setTimerComplete: (value: boolean) => void;
   setLatestSession: (value: WorkoutSession | null) => void;
   setIsRollAndStartMode: (value: boolean) => void;
-  userProfile: UserProfile | null;
   setUserProfile: Dispatch<SetStateAction<UserProfile | null>>;
   fetchHistory: () => Promise<void>;
   resetNotificationFlags: () => void;
@@ -49,7 +48,6 @@ export function useWorkoutComplete({
   setTimerComplete,
   setLatestSession,
   setIsRollAndStartMode,
-  userProfile,
   setUserProfile,
   fetchHistory,
   resetNotificationFlags,
@@ -89,9 +87,8 @@ export function useWorkoutComplete({
         return null;
       });
 
-    let completion;
     try {
-      completion = await api.completeWorkout({
+      await api.completeWorkout({
         activityId: session.id,
         timestamp: new Date(session.timestamp).toISOString(),
         exerciseId: session.exercise.id,
@@ -168,10 +165,23 @@ export function useWorkoutComplete({
       try {
         const freshLocation = await freshLocationPromise;
         const { zoneId, zoneInfo } = buildZoneFromLocation(freshLocation || undefined);
-        if (completion.created && zoneId && zoneInfo) {
+        if (zoneId && zoneInfo) {
+          // The zone RPC itself is idempotent. Run it even after a duplicate completion response:
+          // the initial HTTP response may have been lost after the workout committed but before a
+          // fresh location was available.
+          // Snapshot the durable captain before this workout becomes zone-scored. Comparing only
+          // after attachment makes a fresh, previously unclaimed zone look like the user already
+          // owned it and suppresses the naming/heist modal.
+          const previousCaptain = await fetchZoneCaptain(zoneId);
           const attachment = await api.attachActivityZone(session.id, zoneId);
           if (!attachment.attached) return;
-          const heistResult = await checkDiceHeist(zoneId, userId, session.reps, zoneInfo);
+          const heistResult = await checkDiceHeist(
+            zoneId,
+            userId,
+            session.reps,
+            zoneInfo,
+            previousCaptain
+          );
           const canNameZone = heistResult.becameSheister && heistResult.zoneIsUnnamed;
           if (heistResult.isHeist || canNameZone) {
             if (!hasRestarted && restartTimerId) clearTimeout(restartTimerId);
