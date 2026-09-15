@@ -27,7 +27,6 @@ interface UseWorkoutCompleteOptions {
   setTimerComplete: (value: boolean) => void;
   setLatestSession: (value: WorkoutSession | null) => void;
   setIsRollAndStartMode: (value: boolean) => void;
-  userProfile: UserProfile | null;
   setUserProfile: Dispatch<SetStateAction<UserProfile | null>>;
   fetchHistory: () => Promise<void>;
   resetNotificationFlags: () => void;
@@ -49,7 +48,6 @@ export function useWorkoutComplete({
   setTimerComplete,
   setLatestSession,
   setIsRollAndStartMode,
-  userProfile,
   setUserProfile,
   fetchHistory,
   resetNotificationFlags,
@@ -89,9 +87,8 @@ export function useWorkoutComplete({
         return null;
       });
 
-    let completion;
     try {
-      completion = await api.completeWorkout({
+      await api.completeWorkout({
         activityId: session.id,
         timestamp: new Date(session.timestamp).toISOString(),
         exerciseId: session.exercise.id,
