@@ -11,6 +11,7 @@ import {
   UNNAMED_ZONE_DISPLAY,
   ZONE_GRID_SIZE,
   buildZoneFromLocation,
+  evaluateDiceHeist,
   getCaptainRelation,
   getZoneBounds,
   getZoneDisplayRadiusMeters,
@@ -137,5 +138,59 @@ describe("zone zoom scaling", () => {
     const zoomedOut = getZoneDisplayRadiusMeters(40.7, 6);
     expect(zoomedOut).toBeGreaterThan(atReferenceZoom);
     expect(zoomedOut / atReferenceZoom).toBe(16);
+  });
+});
+
+
+describe("post-attachment dice heist evaluation", () => {
+  const zone = getZoneFromCoordinates(40.758, -73.9855);
+  const userId = "new-sheister";
+
+  it("recognizes the first durable claim of a new unnamed zone so the naming modal opens", () => {
+    expect(
+      evaluateDiceHeist(
+        null,
+        { zoneId: zone.id, captainUserId: userId, captainUsername: "You", totalReps: 24 },
+        userId,
+        24,
+        true,
+        zone
+      )
+    ).toMatchObject({
+      becameSheister: true,
+      isHeist: false,
+      zoneIsUnnamed: true,
+      newTotalReps: 24,
+    });
+  });
+
+  it("recognizes displacing another captain as a heist", () => {
+    expect(
+      evaluateDiceHeist(
+        { zoneId: zone.id, captainUserId: "previous", captainUsername: "Previous", totalReps: 20 },
+        { zoneId: zone.id, captainUserId: userId, captainUsername: "You", totalReps: 24 },
+        userId,
+        24,
+        false,
+        zone
+      )
+    ).toMatchObject({
+      becameSheister: true,
+      isHeist: true,
+      previousCaptain: "Previous",
+    });
+  });
+
+  it("does not replay the reward when the user already owned the zone before attachment", () => {
+    expect(
+      evaluateDiceHeist(
+        { zoneId: zone.id, captainUserId: userId, captainUsername: "You", totalReps: 20 },
+        { zoneId: zone.id, captainUserId: userId, captainUsername: "You", totalReps: 24 },
+        userId,
+        24,
+        true,
+        zone
+      )
+    ).toMatchObject({ becameSheister: false, isHeist: false });
   });
 });

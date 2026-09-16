@@ -378,41 +378,58 @@ export async function fetchZoneStandings(zoneId: string): Promise<ZoneStandings[
   return Array.from(standings.values()).sort((a, b) => b.totalReps - a.totalReps);
 }
 
+/**
+ * Evaluates a post-attachment zone result against the captain observed before attachment.
+ * The activity is already included in current standings, so deriving "was Sheister" from those
+ * standings suppresses the very first claim of a newly entered zone.
+ */
+export function evaluateDiceHeist(
+  previousCaptain: ZoneCaptain | null,
+  currentCaptain: ZoneCaptain | null,
+  userId: string,
+  newTotalReps: number,
+  zoneIsUnnamed: boolean,
+  zoneInfo: ZoneInfo
+): DiceHeistResult {
+  const wasSheister = previousCaptain?.captainUserId === userId;
+  const isNowSheister = currentCaptain?.captainUserId === userId;
+  const becameSheister = !wasSheister && isNowSheister;
+
+  return {
+    isHeist:
+      becameSheister &&
+      previousCaptain !== null &&
+      previousCaptain.captainUserId !== userId,
+    becameSheister,
+    zoneIsUnnamed,
+    zoneInfo,
+    previousCaptain: previousCaptain?.captainUsername,
+    newTotalReps,
+  };
+}
+
 export async function checkDiceHeist(
   zoneId: string,
   userId: string,
   addedReps: number,
-  zoneInfo: ZoneInfo
+  zoneInfo: ZoneInfo,
+  previousCaptain: ZoneCaptain | null
 ): Promise<DiceHeistResult> {
-  const currentCaptain = await fetchZoneCaptain(zoneId);
-  const previousCaptainId = currentCaptain?.captainUserId;
+  const [currentCaptain, standings, zoneIsUnnamed] = await Promise.all([
+    fetchZoneCaptain(zoneId),
+    fetchZoneStandings(zoneId),
+    isZoneUnnamed(zoneId),
+  ]);
+  const newTotalReps = standings.find((standing) => standing.userId === userId)?.totalReps || addedReps;
 
-  const standings = await fetchZoneStandings(zoneId);
-  const userStanding = standings.find((s) => s.userId === userId);
-  // Completion has already been inserted by the time this UI effect runs.
-  const newTotalReps = userStanding?.totalReps || addedReps;
-
-  const previousUserReps = userStanding?.totalReps || 0;
-  const topAmongOthers = standings
-    .filter((s) => s.userId !== userId)
-    .reduce((max, s) => Math.max(max, s.totalReps), 0);
-
-  const zoneIsUnnamed = await isZoneUnnamed(zoneId);
-
-  const wasSheister = previousUserReps > topAmongOthers;
-  const isNowSheister = newTotalReps > topAmongOthers;
-  const becameSheister = !wasSheister && isNowSheister;
-  const isHeist =
-    becameSheister && previousCaptainId !== undefined && previousCaptainId !== userId;
-
-  return {
-    isHeist,
-    becameSheister,
-    zoneIsUnnamed,
-    zoneInfo,
-    previousCaptain: currentCaptain?.captainUsername,
+  return evaluateDiceHeist(
+    previousCaptain,
+    currentCaptain,
+    userId,
     newTotalReps,
-  };
+    zoneIsUnnamed,
+    zoneInfo
+  );
 }
 
 export function buildZoneFromLocation(location?: {
